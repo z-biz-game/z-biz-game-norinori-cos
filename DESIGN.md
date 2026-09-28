@@ -230,9 +230,9 @@ makeShape → digToUnique → polishSolvable → solve → 量难度
    跑 attempt 链，主线程只收进度并显示"已检查 N 张候选盘"），而不是把线抬上去。
    这条边界还在：生成慢不是 bug，把生成挪回主线程才是。
 6. **白格连通不是规则**（第一节）。
-7. **还没写的东西**：`.github/workflows/{ci,pages}.yml`、Electron 壳。
-   第二阶段的入口都已经写在磁盘上并被总门点名（`EXTRA_JS`/`SHELLS`，见第八节第 1 条），
-   清单里依旧不许有空头承诺。
+7. **还没做的东西**：Electron 壳，以及"发布之后拿 `BASE_URL=` 手跑一遍部署站点"的那份读数
+   （这一跑不进 CI，理由见第十一节末）。第二、三阶段的入口都已经写在磁盘上并被总门点名
+   （`EXTRA_JS`/`SHELLS`，见第八节第 1 条），清单里依旧不许有空头承诺。
 
 ## 十、浏览器壳与浏览器闸（第二阶段）
 
@@ -319,6 +319,52 @@ Chrome 那三个 `--disable-*-throttling` 标志不是为了跑得快：后台�
   复用会把"首屏/续档"的读数变成别人的历史。端口被占就往后挪并打印"谁在听这一口"，
   绝不借别人已经绑上的 socket —— 借来的端口会发出**另一个应用**的 `index.html`，
   而"页面加载成功了"分不清这件事，所以预检按字节比对磁盘上的 13 条真实模块路径。
+
+## 十一、CI 覆盖什么、不覆盖什么（第三阶段）
+
+`.github/workflows/ci.yml` 两个 job，`.github/workflows/pages.yml` 一次文件拷贝 + 一发部署。
+写它们的时候每条命令都在本机原样跑过一遍（`_tmp-` 脚本，不提交），绿了才进 workflow ——
+"只存在于 workflow 的门"是这个家族红过的第二次：本仓首页**有** canvas，直接把兄弟仓那份
+`grep -q 'role="grid"'` 抄过来就是一条永远红的死步骤。
+
+**logic job**（node 22）跑 `npm test` 并数 RESULT 行数必须是 **10**（8 套逻辑 + balance + check 自己），
+再补三条总门管不到的：
+
+- `js/` 整棵树都不许 `import`/`import(` 指向 `tools/`。这是分层门的**第二套口径**：
+  `check.mjs` 那道只扫 `js/engine/`（判定路径），而 Pages 发的字节是 `index.html + css/ + js/`，
+  `tools/` 不发 —— 运行时模块去够 `tools/` 要么是线上 404，要么是拿闸的夹具当产品代码。
+  正则写的是 import 形状，注释里提一句 `tools/verify.sh` 不算命中。
+- 入口接线 17 条：`<canvas` / `id="board"` / `id="win-veil"` / `css/game.css` / `js/main.js`，
+  `main.js` → `render/board.js`、`ui/game.js`、`store.js`、`engine/grid.js`、`engine/counter.js`、
+  `js/gen-worker.js`，`gen-worker.js` → `engine/generate.js`，`ui/game.js` → `engine/{solver,grid}.js`，
+  存档键 `norinori.save.v1` 在 `js/store.js` 与 `tools/scenarios.js` 里是同一个字符串，
+  外加 `[hidden]{display:none!important}` 必须站在 CSS 表首。
+- 提交里不许有 `_tmp-` 前缀的探针：`check.mjs` 按前缀跳过它们、`.gitignore` 把它们挡住，
+  两条合起来等于"没人看过它们"；真出现在 `git ls-files` 里说明有人 `git add -f` 过。
+
+**browser job** 把 `tools/verify.sh` 跑两趟，一共**三种 URL 形状**：
+
+1. `bash tools/verify.sh` —— root 5279 + Pages 前缀 5280，本仓自己那份 `server.cjs` 服务，
+   每形态 10/10 腿、198 条断言（本机 2026-09-29 实测两趟都绿）。
+2. 一个只装着 `index.html + css/ + js/` 的临时根，由 `python3 -m http.server` 服务，
+   `BASE_URL=` 指过去再跑十腿。名单外的四样（`server.cjs`、`tools/fixtures.js`、`tests/`、`*.md`）
+   **必须 404**：`tools/fixtures.js` 里躺着每张夹具盘的手推答案，跟着站点上去就等于把答案当静态内容发布。
+
+本机预跑的第三种形状读数：三样 200 / 四样 404 对上，`shape=custom 汇总: 10/10 legs · 198 checks · 0 failed`
+（另有 2 条是 `resumefrag` 设计里的红）。
+
+**CI 不跑的四样**，都是明说的选择不是遗漏：
+
+- `SABOTAGE=1`：阴性自证只在开发时手跑。写进 CI 等于每天把闸的坏样子重演一遍，
+  而它的价值恰恰在"改错一位期望值必须红且 `rc≠0`"这一句人工确认。
+- `tools/balance.mjs --dose`：往线上注入不可能的假值。它判的是线本身，不是出货的盘。
+- `--samples=300` 的重量：那是量天花板用的，不是门；写进 CI 就变成每天重测一次结论。
+- `BASE_URL=https://z-biz-game.github.io/z-biz-game-norinori-cos/`：**部署件那一跑不进 CI**。
+  CI 里的第三种形状是本地模拟，线上还有 Pages 自己的重定向、缓存头与 base path 的真实行为，
+  所以发布之后要手跑一次并把读数写回这一节（现在还没跑，站点也还没发）。
+
+runner 的墙钟**不能与第七节那张本机表对照**：`balance` 的绝对线照判，但那一列读的是 GitHub
+那台机器的负载。可重现的是结点与链深这两个纯整数计数。
 
 ## 复跑这些数字
 
