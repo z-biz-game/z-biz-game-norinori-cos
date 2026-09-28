@@ -1,0 +1,19 @@
+{
+  "name": "z-biz-game-norinori-cos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "のりのり / Norinori —— 题面就是一张区域剖分：每块区域恰好两颗黑格，黑格两两成 1x2/2x1 骨牌、骨牌可跨区域边界、不得共边但可共角。出货的每一盘都由按区域枚举的穷举计数器数到「恰好一个解」，再由五条局部规则的零猜测求解器推到底；难度是量出来的（链条轮数 + 证明结点）。第一阶段只有引擎与门禁，端口对 5279/9379。",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "check": "node tools/check.mjs",
+    "probe": "node tools/generator-probe.mjs",
+    "test": "node tools/check.mjs",
+    "balance": "node tools/balance.mjs",
+    "dose": "node tools/balance.mjs --dose"
+  },
+  "keywords": ["puzzle", "norinori", "nikoli", "logic", "deduction"],
+  "license": "MIT"
+}
