@@ -1,0 +1,96 @@
+/* [hidden] 必须带着 !important 站在这张表的最前面。
+   #win-veil 平时是 display:grid，按层叠顺序它会盖掉 UA 的 [hidden]{display:none}，
+   于是那块"藏起来"的胜利卡片还在画、还在吃点击——指针闸会点不到它下面那颗按钮，
+   而红字看起来像"按钮坏了"。这条不是风格问题，是命中测试的问题。 */
+[hidden] { display: none !important; }
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--page-bg);
+  color: var(--ink);
+  font: var(--font-ui);
+}
+
+header { padding: var(--space-pad) var(--space-pad) 0; }
+h1 { margin: 0; font-size: 22px; letter-spacing: .04em; }
+h1 .sub { color: var(--ink-quiet); font-size: 14px; font-weight: 400; }
+.rule { margin: 8px 0 0; max-width: 62ch; color: var(--ink); }
+.rule b { color: var(--accent); font-weight: 600; }
+.quiet { color: var(--ink-quiet); }
+
+main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-gap);
+  align-items: flex-start;
+  padding: var(--space-pad);
+}
+
+.board-wrap {
+  /* 宽度由这条 flex 规则定死，画布只是里面的孩子：
+     main.js 的 layout() 量的就是这个容器，如果让它量画布自己，就成"画多大就量多大"的自反馈。 */
+  flex: 1 1 340px;
+  min-width: 260px;
+  max-width: 560px;
+  position: relative;
+}
+#board {
+  display: block;
+  border-radius: var(--space-radius);
+  background: var(--board-bg);
+  touch-action: manipulation;
+}
+#board:focus-visible { outline: 2px solid var(--selected); outline-offset: 3px; }
+
+#win-veil {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  text-align: center;
+  border-radius: var(--space-radius);
+  background: color-mix(in srgb, var(--panel-bg) 88%, transparent);
+}
+#win-veil .big { margin: 0; font-size: 26px; color: var(--hint); }
+#win-veil .why { margin: 0; color: var(--ink-quiet); max-width: 30ch; }
+
+.panel {
+  display: grid;
+  gap: 10px;
+  width: var(--space-panel-w);
+  padding: var(--space-pad);
+  background: var(--panel-bg);
+  border-radius: var(--space-radius);
+}
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pens .pen.on { border-color: var(--accent); color: var(--accent); }
+
+button, select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--board-bg);
+  border: 1px solid color-mix(in srgb, var(--ink-quiet) 45%, transparent);
+  border-radius: calc(var(--space-radius) - 4px);
+  padding: 7px 11px;
+  cursor: pointer;
+  transition: border-color var(--motion-ms) ease, color var(--motion-ms) ease;
+}
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--selected); outline-offset: 2px; }
+label { color: var(--ink-quiet); }
+
+.read { margin: 0; font-variant-numeric: tabular-nums; color: var(--ink); }
+/* 状态行的红与绿是**元素身上的类**，不是内嵌的 span：main.js 一律用 textContent 写读数，
+   不拼 innerHTML——判定文本里会带格子下标与引擎原文，拼 HTML 就是把注入面留在自己家里。 */
+.read.bad { color: var(--wrong); }
+.read.good { color: var(--hint); }
+#msg { min-height: 1.45em; }
+.totals { color: var(--ink-quiet); }
+.help { color: var(--ink-quiet); }
+.help summary { cursor: pointer; }
+
+footer { padding: 0 var(--space-pad) var(--space-pad); max-width: 78ch; }
+footer code { color: var(--accent); }

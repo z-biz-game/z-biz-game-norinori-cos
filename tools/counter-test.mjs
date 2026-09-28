@@ -12,7 +12,7 @@ import { regionsOf, checkSolution } from '../js/engine/grid.js';
 import { makeShape } from '../js/engine/partition.js';
 import { makeRng, derive } from '../js/engine/rng.js';
 import { TIERS } from '../js/engine/generate.js';
-import { parseReg, HAND } from './scenarios.js';
+import { parseReg, HAND } from './fixtures.js';
 
 let checks = 0;
 const fails = [];
@@ -24,7 +24,7 @@ function ok(cond, name, detail = '') {
 }
 const key = (b) => Array.from(b).join('');
 
-/* ── ② 手工点解：两张盘的解由人列出来（表在 scenarios.js，求解器也用同一张）── */
+/* ── ② 手工点解：两张盘的解由人列出来（表在 fixtures.js，求解器也用同一张）── */
 for (const fx of HAND) {
   const reg = parseReg(fx.reg, fx.w, fx.h);
   const wantSols = fx.sols.map((cells) => {

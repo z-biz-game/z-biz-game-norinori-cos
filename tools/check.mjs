@@ -12,8 +12,10 @@
 // 所以：清单里的套件必须在磁盘上存在、必须真的跑起来、必须打 RESULT 行、RESULT 自报名必须等于
 // 由文件名算出的那一个、ok 必须 true、fails 必须 0、checks 必须 > 0，且收到的行数必须等于清单长度。
 //
-// 本阶段只有纯 Node 部分：没有 index.html、没有 server.cjs、没有 tools/verify.sh
-// （浏览器壳还没开工，它们的入口不许写进来，写了就是空头承诺）。
+// 门禁管的文件=纯 Node 部分 + 第二阶段的浏览器壳：index.html、js/{main,store,gen-worker,theme}.js、
+// js/ui|render|engine/*、server.cjs、tools/verify.sh。浏览器闸**本身**（十腿 × 两形态）不在这里跑：
+// 它要真 Chrome、要端口、要 ~1 分钟，属于 CI 的 browser job 与本地 `bash tools/verify.sh`。
+// 这里跑的是那两份代码的**语法**，以及"点名的文件必须在磁盘上"——写了名字却文件没了，就是空头承诺。
 // 仓根的 _tmp-* 临时探针一律跳过 —— 它们不归门禁管，但也不许混进 commit。
 import { readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -23,10 +25,11 @@ import { dirname, join, relative } from 'node:path';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIRS = ['js', 'tools', 'tests'];
 const EXTS = ['.js', '.mjs', '.cjs'];
-const EXTRA_JS = []; // 第二阶段发浏览器壳时才点名 server.cjs
-const SHELLS = []; // 第二阶段才有 tools/verify.sh
+const EXTRA_JS = ['server.cjs']; // 仓根不在 DIRS 里，静态服务器要点名才有人检语法
+const SHELLS = ['tools/verify.sh']; // 浏览器闸的入口，同样点名才算数
 const SKIP = (name) => name.startsWith('_tmp-');
-// 引擎 6 + tools 8（四套逻辑门 + 夹具 + 观测器 + balance + 本文件）+ tests 3 张证人 = 17
+// 下限按第一阶段的引擎 6 + tools 8（四套逻辑门 + 夹具 + 观测器 + balance + 本文件）+ tests 3 张证人 = 17 算；
+// 第二阶段的 6 个运行时模块（main/store/gen-worker/theme/ui|render）只让它更富余。
 // 少了就是目录被清空/改名；这条不是拿来"卡新增文件"的，新增只会让它一直富余。
 const MIN_SOURCE_FILES = 17;
 const ENGINE_DIR = 'js/engine';
@@ -40,7 +43,7 @@ const MIN_TEST_FILES = 3;
 // 删一张则因为 MIN_* 与「收到的 RESULT 行数 ≠ 清单长度」当场红 —— 漏跑比跑红更危险。
 const REQUIRED_SUITES = [
   'tools/rule-test.mjs', 'tools/counter-test.mjs', 'tools/solver-test.mjs',
-  'tools/generate-test.mjs', 'tools/scenarios.js',
+  'tools/generate-test.mjs', 'tools/fixtures.js',
 ];
 const MIN_TOOL_SUITES = 4; // tools/*-test.mjs 至少四套（rule/counter/solver/generate）
 
@@ -79,7 +82,11 @@ const ok = (cond, msg) => {
 const files = DIRS.map((d) => join(ROOT, d))
   .filter((d) => existsSync(d))
   .reduce((acc, d) => walk(d, acc), []);
-for (const rel of EXTRA_JS) if (existsSync(join(ROOT, rel))) files.push(join(ROOT, rel));
+for (const rel of EXTRA_JS) {
+  // 点了名却不在磁盘上 = 这条入口从来没存在过，静默跳过等于门禁在自己身上开了个洞。
+  if (!existsSync(join(ROOT, rel))) { ok(false, `点名的入口文件不在磁盘上：${rel}`); continue; }
+  files.push(join(ROOT, rel));
+}
 ok(files.length >= MIN_SOURCE_FILES, `只找到 ${files.length} 个源文件（至少 ${MIN_SOURCE_FILES}），目录名不对？`);
 let jsBad = 0;
 for (const f of files) {
@@ -90,7 +97,11 @@ for (const f of files) {
   }
 }
 let shellBad = 0;
-const presentShells = SHELLS.filter((rel) => existsSync(join(ROOT, rel)));
+const presentShells = SHELLS.filter((rel) => {
+  if (existsSync(join(ROOT, rel))) return true;
+  ok(false, `点名的 shell 入口不在磁盘上：${rel}`);
+  return false;
+});
 for (const rel of presentShells) {
   const r = spawnSync('bash', ['-n', join(ROOT, rel)], { encoding: 'utf8' });
   if (r.status !== 0) {
@@ -100,7 +111,7 @@ for (const rel of presentShells) {
 }
 const shellNote = presentShells.length
   ? `；bash -n：${presentShells.length - shellBad}/${presentShells.length} 个 shell 脚本${shellBad ? `，失败 ${shellBad} 个` : '，零失败'}`
-  : '；bash -n：本阶段还没有 shell 脚本';
+  : '；bash -n：清单里没有 shell 脚本';
 console.log(`语法门：node --check ${files.length - jsBad}/${files.length} 个文件通过（${DIRS.join('、')} 下所有 ${EXTS.join('/')}，跳过 _tmp-*）${shellNote}`);
 
 /* ---------- 2) 引擎侧禁词：判定路径上不许有随机数、时间、环境 ----------

@@ -14,7 +14,7 @@ import { countByRegion, countByBitmask, findSolutions } from '../js/engine/count
 import { buildAdjacency, checkSolution, regionsOf, validatePartition } from '../js/engine/grid.js';
 import { generate, TIERS } from '../js/engine/generate.js';
 import { derive, makeRng } from '../js/engine/rng.js';
-import { HAND } from '../tools/scenarios.js';
+import { HAND } from '../tools/fixtures.js';
 
 let checks = 0;
 const fails = [];

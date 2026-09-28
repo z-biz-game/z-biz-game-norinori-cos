@@ -11,7 +11,7 @@
 import { deriveFacts, deriveOne, RULES, BLACK, WHITE } from '../js/engine/solver.js';
 import { validatePartition, checkSolution, regionsOf } from '../js/engine/grid.js';
 import { countByRegion } from '../js/engine/counter.js';
-import { FIXTURES, DEAD, V, parseReg, parseMarks } from './scenarios.js';
+import { FIXTURES, DEAD, V, parseReg, parseMarks } from './fixtures.js';
 
 let checks = 0;
 const fails = [];

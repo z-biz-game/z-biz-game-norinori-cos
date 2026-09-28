@@ -13,7 +13,7 @@ import { checkSolution, validatePartition, regionsOf } from '../js/engine/grid.j
 import { countByRegion, countByBitmask } from '../js/engine/counter.js';
 import { generate, TIERS } from '../js/engine/generate.js';
 import { derive } from '../js/engine/rng.js';
-import { HAND, parseReg } from './scenarios.js';
+import { HAND, parseReg } from './fixtures.js';
 
 let checks = 0;
 const fails = [];

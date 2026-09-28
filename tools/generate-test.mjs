@@ -13,7 +13,7 @@ import { solve, stateToBlack, RULES } from '../js/engine/solver.js';
 import { countByRegion, countByBitmask } from '../js/engine/counter.js';
 import { checkSolution, validatePartition, regionsOf } from '../js/engine/grid.js';
 import { derive, makeRng } from '../js/engine/rng.js';
-import { parseMarks, parseReg } from './scenarios.js';
+import { parseMarks, parseReg } from './fixtures.js';
 
 let checks = 0;
 const fails = [];
@@ -72,7 +72,7 @@ for (const tier of TIERS) {
     ok(g.metrics.digMoves >= 0 && g.metrics.polishMoves >= 0, `${tag}：两段挪刀的步数要报得出来`);
     // ⑤ 剖分串的 round-trip（UI 拿它当题面）。
     // 比的是"分组是否相同"，不是"区域号是否相同"：formatPartition 沿用引擎里的区域号，
-    // parseReg 按字母首次出现重新编号（scenarios.js 开头写了这条约定），两套编号本来就不是一个约定。
+    // parseReg 按字母首次出现重新编号（fixtures.js 开头写了这条约定），两套编号本来就不是一个约定。
     // 网格分组才是题面，所以逐格对「同组」关系：两格在解析结果里同组 ⇔ 在原剖分里同组。
     const back = parseReg(g.text.partition, w, h);
     let sameGrouping = back.length === n;

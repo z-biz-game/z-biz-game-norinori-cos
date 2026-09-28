@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<!-- 不写 <base>，也没有一个以 / 开头的资源路径：Pages 把站点发在 /<repo>/ 前缀下，
+     硬编 "/" 会在这一形把 css 与引擎全部 404 掉（本组织的浏览器闸因此跑两趟 URL 形态）。 -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 浏览器**无论有没有声明**都会去 origin 根探测 /favicon.ico：不列它，就是每条腿的 console 尾巴上
+     多一条 404（本机 2026-09-29 实测：Chrome 154 自己发的请求，不走元素 error 事件）。
+     门禁那条「无资源 404」判的是 link/script/img 的 error 事件，favicon 探测根本不走这条路 ——
+     也就是说那条断言没有为此放宽，只是读数里噪声一条。声明一个空的 data: 图标就不发这个请求。 -->
+<link rel="icon" href="data:,">
+<title>乗りのり · Norinori</title>
+<link rel="stylesheet" href="css/game.css">
+<script type="module" src="js/main.js"></script>
+</head>
+<body>
+<header>
+  <h1>乗りのり <span class="sub">Norinori</span></h1>
+  <p class="rule">每块粗线区域<b>恰好两颗黑格</b>；黑格两两成 1×2／2×1 骨牌，<b>骨牌可以跨出区域</b>，
+    两块骨牌不得共边（可以共角）。<span class="quiet">白格不需要连成一片。</span></p>
+</header>
+
+<main>
+  <section class="board-wrap">
+    <!-- tabindex 让棋盘自己接键盘；焦点由 main.js 在落子/提示后收回画布，
+         不然按键会飘到 body 上，浏览器闸里那几条键盘断言就成了"点得到但键不动"。 -->
+    <canvas id="board" tabindex="0" aria-label="のりのり 棋盘：点击落子"></canvas>
+    <div id="win-veil" hidden>
+      <p class="big">推完了</p>
+      <p class="why" id="win-why"></p>
+      <button id="win-next" type="button">换一局</button>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="控制">
+    <label class="row">档位
+      <select id="tier"></select>
+    </label>
+    <div class="row pens" role="group" aria-label="笔">
+      <button id="pen-black" class="pen on" type="button" aria-pressed="true">黑格</button>
+      <button id="pen-white" class="pen" type="button" aria-pressed="false">白点</button>
+    </div>
+    <div class="row">
+      <button id="new-game" type="button">换一局</button>
+      <button id="hint" type="button">提示</button>
+      <button id="undo" type="button">撤销</button>
+      <button id="check" type="button">检查</button>
+      <button id="clear" type="button">清空</button>
+    </div>
+    <p class="read" id="status">开局之前没有读数。</p>
+    <p class="read" id="progress"></p>
+    <p class="read seedline">种子 <span id="seed"></span>｜第 <span id="attempt-n">0</span> 次尝试</p>
+    <p class="read totals" id="totals"></p>
+    <p class="read msg" id="msg" aria-live="polite"></p>
+    <details class="help">
+      <summary>键盘</summary>
+      <p>1 黑格笔、2 白点笔、U 撤销、H 提示、N 换一局、E 清空当前笔所在格的落子。
+         方向键移动焦点格，空格/回车在焦点格落子。</p>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <p class="quiet">引擎在 <code>js/engine/</code>：出货的每一盘都由穷举计数器数到「恰好一个解」，
+    再由五条局部规则零猜测推到底。出题跑在 <code>js/gen-worker.js</code> 这个 module worker 里——
+    硬骨档一次 attempt 的实测尾巴是 0.6～2.3 秒，主线程同步等就是把界面钉死。</p>
+</footer>
+</body>
+</html>

@@ -1,11 +1,11 @@
 # 设计文档 · 乗りのり / Norinori
 
 第一阶段交付的是**引擎与门禁**：`js/engine/` 六个模块、`tools/` 八个文件（总门 + 四套逻辑门 +
-夹具自检 + 观测器 + 难度实测）、`tests/` 三张证人。浏览器壳、CI workflow、Pages 都还没写，本文件里凡涉及它们的
-句子都标成"第二阶段/第三阶段"，不写成既成事实。
+夹具自检 + 观测器 + 难度实测）、`tests/` 三张证人。第二阶段在上面叠了**浏览器壳与浏览器闸**
+（第十节）。CI workflow 与 Pages 还没写，本文件里凡涉及它们的句子都标成"第三阶段"，不写成既成事实。
 
-本文的每个数字都是本机 2026-09-29 复跑读回来的（Node v26.8.1、darwin arm64、15 核）。
-复跑方法在最后一节。
+本文的每个数字都是本机 2026-09-29 复跑读回来的（Node v26.8.1、darwin arm64、15 核；
+浏览器闸那批读数是 Chrome 154.0.8037.57）。复跑方法在最后一节。
 
 ---
 
@@ -91,7 +91,7 @@ cross+A 的规则页把它展开成可判定的三句（本轮抓到的中文原
 三套穷举器逐盘同数是 `tests/counter-agree.test.mjs` 的活：按区域枚举、整盘位暴力、
 以及第三套独立暴力枚举，在 40 张随机合法剖分上比**解的条数**并比**解集内容**（排序后逐条比字符串），
 其中 1 张唯一解、28 张无解、最多一张 9 条解；两张人手工点解的盘（4 条 / 1 条）也比内容，
-而那批解是**人手列出来的**（`tools/scenarios.js` 的 `HAND` 里带着那段推理文字）。
+而那批解是**人手列出来的**（`tools/fixtures.js` 的 `HAND` 里带着那段推理文字）。
 超过 20 格时位暴力枚举器必须**拒绝**而不是给个数（同文件钉住）。
 
 ## 五、五条规则，每条一张"这一轮只推得出这一件事"的夹具
@@ -171,7 +171,9 @@ makeShape → digToUnique → polishSolvable → solve → 量难度
 
 `npm test` = `node tools/check.mjs`，五道：
 
-1. **语法门**：`js`、`tools`、`tests` 下所有 `.js/.mjs/.cjs` 逐个 `node --check`（17 个文件），
+1. **语法门**：`js`、`tools`、`tests` 下所有 `.js/.mjs/.cjs` 逐个 `node --check`（第二阶段之后是 26 个文件），
+   外加点名的 `EXTRA_JS=['server.cjs']` 与点名的 shell 入口 `SHELLS=['tools/verify.sh']`（`bash -n`）；
+   点了名却不在磁盘上是**一条红**而不是跳过 —— 清单里不许有空头承诺。
    `_tmp-*` 前缀的临时探针跳过但不许进 commit。
 2. **禁词门**：引擎七个禁词 `Math.random`、`Date.now`/`new Date`、`performance.now`、`process.env`、
    `require(`、`from 'node:'`、动态 `import('node:'`，**注释外**命中即红。
@@ -206,7 +208,8 @@ makeShape → digToUnique → polishSolvable → solve → 量难度
   而"出货率被改崩"在小样本下依然会红（逐档那条 `shipped>=1` 还在，标定样本下再加每档 ≥5 张）。
 
 三张证人的分工与套数也被判：`tests/` 少于 3 张、`tools/*-test.mjs` 少于 4 套、源文件少于 17 个，
-都直接红 —— 漏跑比跑红更危险。
+都直接红 —— 漏跑比跑红更危险。那个 17 是**第一阶段的账**（引擎 6 + tools 8 + tests 3），
+第二阶段的 9 个界面/闸文件只把实测读数抬到 26，下限不动：它是"少文件"的探测器，不是文件清单。
 
 ## 九、已知边界（不是 TODO，是口径）
 
@@ -223,13 +226,99 @@ makeShape → digToUnique → polishSolvable → solve → 量难度
    推完但不合法 0、推完且合法 0（最后这项必须为 0）。
 4. **手解的多解盘推不完，这是明说的边界**：四条解那张 `AACC/CCCC/CCCC/CCBB` 五条规则推到
    10/16 格停住。零猜测承诺只对**出货盘**成立（唯一 + 磨过），不对任意区域剖分成立。
-5. **硬骨档出货 4.7%、一次 attempt 最慢 2.3 秒**。第二阶段的界面必须异步生成并显示
-   "已检查 N 张候选盘"，而不是把线抬上去。
+5. **硬骨档出货 4.7%、一次 attempt 最慢 2.3 秒**。界面的处理是**异步生成**（`js/gen-worker.js`
+   跑 attempt 链，主线程只收进度并显示"已检查 N 张候选盘"），而不是把线抬上去。
+   这条边界还在：生成慢不是 bug，把生成挪回主线程才是。
 6. **白格连通不是规则**（第一节）。
-7. **还没写的东西**：`index.html`、`js/{theme,store,main}.js`、`js/render/`、`server.cjs`、
-   `tools/{playtest.cjs,verify.sh}`、`.github/workflows/{ci,pages}.yml`、Electron 壳。
-   `tools/check.mjs` 的 `EXTRA_JS` 与 `SHELLS` 现在是空数组，写它们的时候才点名 ——
-   清单里不许有空头承诺。
+7. **还没写的东西**：`.github/workflows/{ci,pages}.yml`、Electron 壳。
+   第二阶段的入口都已经写在磁盘上并被总门点名（`EXTRA_JS`/`SHELLS`，见第八节第 1 条），
+   清单里依旧不许有空头承诺。
+
+## 十、浏览器壳与浏览器闸（第二阶段）
+
+壳不引入第二套真相，四条纪律写在 `js/main.js` 文件头，每一条都有对应的腿在判：
+
+1. **只有一个判定入口**。页面上的"对不对"来自 `js/ui/game.js` 的 `status()`，而它调的是引擎；
+   `main.js` 里不许出现第二套"数黑格 / 看骨牌"的代码。`reproof` 腿判的就是这句话：页面 worker
+   生成的盘逐张交回 node 证人比剖分与解，四张全对上。
+2. **只有一份几何**。画布尺寸、点击命中、格中心坐标全部问 `js/render/board.js` 的同一个 `view`
+   对象，`draw` 算出来的 `geo` 就是 `hitCell`/`centerOf`/`pixelAt` 唯一能用的那一份。
+   `sizes` 腿在五档上逐格判"格中心命中自己""每格都在画布内""背板像素 = dpr×CSS"，共 40 条。
+3. **页面上没有"闸专用"的输入通道**。期望值由 node 经 `window.__expectRaw` 注进来，页面只拿它
+   跟自己比，从不照它摆自己的状态；URL 里只认 `?tier=&seed=`。
+4. **墙钟只当读数，绝不当输入**。`elapsedMs` 只进面板与存档，种子里不许有 `Date`/`performance`
+   —— 引擎那一侧由第二节的禁词门打死，界面这一侧由这条纪律管住（禁词门只扫 `js/engine/`，
+   因为界面层的 `performance.now()` 是秒表、`Date.now()` 是存档写入时刻，都不进判定路径）。
+
+### 腿清单（每形态跑一遍，两种形态）
+
+| 腿 | 判什么 | 条数 |
+| --- | --- | --- |
+| `boot-default` | 裸 URL 开的是 `js/main.js` 里写死的那张盘（**不是按日期算的**），且新 profile 上无档可续 | 29 |
+| `boot-url` | `?tier=&seed=` 真的决定首屏，档与盘都跟 node 证人同一张 | 29 |
+| `render` | 像素对账：每格中心是按奇偶对上的底纹色（这条同时钉住 `offX/offY/cell`）、粗线只画在剖分不同的地方、细线不许有粗线的颜色、最外圈粗线没被裁掉且外面还留着内边距、四组颜色两两分得开 | 11 |
+| `pointer` | 只认 `Input.dispatchMouseEvent` 派进来的 27 下（含换笔与那一下被卡片挡住的）：越界点击不落子、白点逐格对位、同格连点两下是"落黑→擦掉"且擦掉也记一步、落成的是 node 证人那条解、状态行与累计账对得上、推完之后 `document.elementFromPoint` 落在卡片上、卡片上的"换一局"也是真点出来的 | 27 |
+| `keyboard` | 键全部由 `Input.dispatchKeyEvent` 派进来（第 0 回合那一下真点击只为把焦点交给画布，且必须不许落子）：方向键挪焦点格、空格落子、两种笔各算一步、`u` 撤回到的是**上一步的值**（那颗白点）而不是"擦干净"、`h` 提示的格必须与页内 import 的引擎事实集同意 | 10 |
+| `sizes` | 五档各自的几何与命中（见纪律 2） | 40 |
+| `store` | 一个键 `norinori.save.v1`：形状校验、**交来一份对不上的档就这次写入不发生**、坏档读成没档并当场抹掉、档里那份剖分必须引擎认得、版本号不对就当没档 | 15 |
+| `resume` | 裸 URL 真导航之后从存档续回同一张盘（剖分逐格同、落子与步数同、撤销是灰的），再单独判"钉住的 URL 优先于存档" | 22 |
+| `resumefrag` | **设计里就红**的自证腿：派一次同文档 `#fragment` 跳转，那两条"换过文档 / 走过存档恢复"的断言必须红。红不了就等于续局腿其实没换文档也能过 | 2（红） |
+| `reproof` | worker ↔ node 出货对照 + "生成期间主线程没被钉住" | 13 |
+
+每形态 10/10 腿、198 条断言、0 失败（本机 2026-09-29，Chrome 154.0.8037.57，root 与 prefix 各 10 秒左右）。
+两种 URL 形态各跑一遍不是仪式感：根形态是唯一一种能被本地服务器"蒙对"的形态 —— 斜杠开头的说明符
+在仓库=文档根时解得开，挂在 `/<repo>/` 下就 404，而抛出来的 dynamic import 会把整段注入脚本一起带沉，
+于是部署站点静默地只跑了一小部分断言。前缀形态用的就是产品自己那份 `server.cjs`
+（`PREFIX=/z-biz-game-norinori-cos PORT=5280`）：生产怎么服务，闸就怎么服务。
+`mod()` 特意按 `document.baseURI` 解析，只有前缀那一跑能看见它到底解没解错。
+
+条数按腿钉死（`want_checks`）：腿还在、断言少了一半，是这一族最静默的一种坏法 ——
+场景里一个 import 抛掉、一个回合没走、一条分支没进，tally 都会照常交出一个"0 failed"。
+
+### 这一轮闸咬出来的东西
+
+这一轮咬出来的东西分三类：两条**真产品 bug**（都在 `js/store.js`）、三条**闸自己写错的口径**
+（取样单位、导航方式、node 侧的 RESULT 行截断）、一条**界面设计的边界**。
+没有一条是靠"把断言改绿"消掉的，记在这里是因为它们会再犯：
+
+1. `js/store.js` 的 `okTotals` 拿 `Object.values` 当键名查（应为 `Object.keys`），于是"账"这一形状
+   **从来没有通过过校验**：写进去的每次都被拒，读的时候又因为不过被当场抹掉。浏览器第一条真落子就撞上了它。
+2. 同一个文件里 `saveResume` 原先写的是 `okResume(r) ? r : null` —— 调用方哪里算错一个字段，
+   玩家已有的存档就被这一次静默抹掉，而调用方还拿到过。这就是文件头说的"半对比没有更坏"，
+   现在改成对不上的档**这次写入不发生**。
+3. `render` 腿第一次取样取到 `null`：`pixelAt` 收的是 client 坐标，而 `geo.offY` 是 canvas 本地量，
+   差一个 `pad`。这是页内 API 的口径，不是断言写错；修的是取样点（`canvasBox().top + geo.offY`）。
+4. 赢了之后胜利遮罩接走画布的指针事件。这是设计，所以 `pointer` 腿把"重复点击擦除"判在**中途**，
+   把"遮罩接住点击 + `document.elementFromPoint` 是遮罩 + 落子数不动"判在终局，再多一次真点击"换一局"。
+5. `resume` 腿原先用带查询串的 URL 导航，于是续的是 URL 而不是档（5 条红：`got url / want store`）。
+   产品文档写明"钉住的 URL 优先"，所以修的是腿：`tools/playtest.cjs` 加了 `goto:` 真导航模式（`Page.navigate`），
+   续档那一跑用裸 URL，优先级本身交给 round 3 单独判。
+6. 闸自己也修过一条 node 侧的：`console.log` 在 stdout 被管道接走时是**异步**的，
+   紧跟着 `process.exit()` 会把 RESULT 行截掉（表现为空输出 + 没有 tally）。
+   现在两条通道都 await `write()` 回调 —— 这条解释了为什么早期 `resumefrag` 的汇总看起来"什么都没跑"。
+
+### "主线程没被钉住"要读成比例，不是次数
+
+这条断言最早写成 `ticks >= samples.length`，量的其实是定时器对齐。改成比例：
+`expected = ⌊elapsedMs/25⌋`，判 `expected < 4 || ticks×2 >= expected`。
+样本清单里硬留了一张 hard（实测每张盘的生成毫秒：warmup 9 / easy 14 / tricky 59 / **hard 986**）——
+只挑 warmup/easy 的话单张十几毫秒，比例判据结构上到不了 4 次心跳，那条断言就变成白断言。
+Chrome 那三个 `--disable-*-throttling` 标志不是为了跑得快：后台标签页的定时器会被对齐到分钟级，
+那种读数量的是 Chrome 的策略而不是我们的代码；判据是比例，标志位只让这台机器与 CI 那台读得一样。
+
+### 闸的自证与可重现性
+
+- `SABOTAGE=1 SHAPES=root LEGS="boot-url"`：node 证人里"界面那行尝试次数"改错一位 ⇒
+  必须红且 `rc≠0`（实测红在 `boot/第几次尝试出货` 与 `boot/界面上的尝试读数 got 2 / want 3` 两条上）。
+- 腿清单的顺序也是判据：`LEGS="resume boot-default"` 会让 `boot-default` 红一片并 `rc=1`，
+  因为那一腿的"新 profile 上无档可续"靠的是清单最前那句"先把 tab 停在 404 上、应用页一次都没跑过"。
+  改坏了会响，不是假绿。
+- 同一条命令连跑三次，RESULT 行逐字节 diff 为空（`render` 腿实测）。做到这件事的办法是：
+  一切墙上时钟/环境读数都以 `_` 前缀落进 `.extra.json`，绝不进 stdout；判据一条没放宽，挪走的只是时钟。
+- 每形态一份**新 `mktemp` 出来的 Chrome profile**：profile 里带着上一形态的 localStorage 与磁盘缓存，
+  复用会把"首屏/续档"的读数变成别人的历史。端口被占就往后挪并打印"谁在听这一口"，
+  绝不借别人已经绑上的 socket —— 借来的端口会发出**另一个应用**的 `index.html`，
+  而"页面加载成功了"分不清这件事，所以预检按字节比对磁盘上的 13 条真实模块路径。
 
 ## 复跑这些数字
 
@@ -238,7 +327,15 @@ npm test                                     # 46s：三道静态门 + 八套 RE
 node tools/balance.mjs --samples=300         # 出货率与尾统计量的重量（hard 档要几分钟）
 node tools/balance.mjs --samples=150 --dose  # 线的自证：注入 6 条假值必须全咬
 node tools/generator-probe.mjs               # 只打账不判
+bash tools/verify.sh                         # 浏览器闸：十腿 × 两形态（root 5279 + prefix 5280，CDP 9379）
+SHAPES=root bash tools/verify.sh             # 只跑一种形态，改东西时先这样（每形态约 10s）
+SABOTAGE=1 SHAPES=root LEGS="boot-url" bash tools/verify.sh   # 闸的阴性自证：必须红且 rc≠0
+npm run verify:root                          # 同上那条单形态的 npm 别名
 ```
+
+浏览器闸那批读数**不比逻辑读数更可重现**：它要本机有 Chrome、要一个没被占的 CDP 口，
+而 `reproof` 腿里的生成毫秒跟着机器负载走。所以文档里只写"哪种形态跑了几条腿、几条断言、
+几条设计里的红"，耗时一律不进 stdout（见第十节）。
 
 改任何出题配置（尺寸、maxSize、cap、maxMoves、budget）之后，两张绝对线表与 `TIERS.chain` 区间
 都必须 `--calibrate` 重量再回填；`tools/check.mjs` 里那个 `BALANCE_MIN_CHECKS = 277`
