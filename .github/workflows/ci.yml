@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # 纯 Node 那一段：三道静态门 + 八套逻辑 RESULT + 标定样本上的难度实测。
+  # 这一段单独成一个 job 是为了让"引擎的门"和"浏览器的门"分开红 —— 浏览器那趟在任何机器上
+  # 都是最慢、最容易因环境抖的一趟，跟逻辑门捆在一起，红的时候分不清红在哪一边。
+  logic:
+    name: syntax + engine guarantees
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # 没有 npm install：这仓零运行时依赖，装东西只会让 CI 因为网络抖动而红。
+      # npm test 就是 tools/check.mjs（五道：语法门 / 引擎禁词门 / 分层门 / 八套 RESULT 行 / balance@150）。
+      # 数 RESULT 行数而不是只跑一次看退出码：套件被改名、被漏跑、spawn 失败但退出码没传上来，
+      # 三种都表现为"绿了但少跑一套"。10 = 8 套逻辑（rule/counter/solver/generate-test + fixtures
+      # + 三张证人）+ balance + check 自己，本机 2026-09-29 实测就是这个数。
+      # pipefail：`npm test | tee` 取的是 tee 的退出码，不加就是"npm 全红也照样往下跑"。
+      - name: Master gate (static + 8 logic suites + balance@150)
+        run: |
+          set -eo pipefail
+          npm test 2>&1 | tee /tmp/npmtest.log
+          n=$(grep -cE '^RESULT' /tmp/npmtest.log)
+          echo "RESULT 行数 = $n（必须是 10）"
+          [ "$n" = 10 ]
+          grep -E '^RESULT' /tmp/npmtest.log
+          ! grep -qE 'ok=false|fails=[1-9]' /tmp/npmtest.log
+
+      # 分层不变量的**第二套口径**：check.mjs 的第三道门只扫 js/engine/（那是判定路径），
+      # 而 Pages 发的字节是 index.html + css/ + js/ —— tools/ 不发。所以整棵 js/ 树都不许碰
+      # tools/：那是"线上 404"或"拿闸的夹具当产品代码"两种坏法的共同形状。
+      # 正则是 import/export 形状，**不是**"提一句 tools/ 就算命中"：界面文件的注释里合法地写着
+      # tools/verify.sh 与 tools/scenarios.js，宽正则会把注释判成分层破坏。
+      - name: js/ never imports tools/
+        run: |
+          if grep -rnE "(import|export)[^;]*from ['\"][^'\"]*tools/" js/ ; then
+            echo '::error::运行时模块（js/）去够了 tools/ —— 分层又倒了'
+            exit 1
+          fi
+          if grep -rnE "import\(['\"][^'\"]*tools/" js/ ; then
+            echo '::error::js/ 里有动态 import 指向 tools/'
+            exit 1
+          fi
+          echo 'js/ 干净：没有任何指向 tools/ 的 import（注释里提它不算）'
+
+      # 入口接线证据：每一条都在本机原样跑过（rc=0），且都指向本仓真实的接线。
+      # 抄兄弟仓的清单会红：本仓首页**有** canvas（`grep -c '<canvas' index.html` 实测 1），
+      # 而 hidato 那条 `grep -q 'role="grid"'` 在这里根本不存在。
+      - name: Entry file really wires the engine
+        run: |
+          grep -q '<canvas' index.html
+          grep -q 'id="board"' index.html
+          grep -q 'id="win-veil"' index.html
+          grep -q 'css/game.css' index.html
+          grep -q 'js/main.js' index.html
+          grep -q "'./render/board.js'" js/main.js
+          grep -q "'./ui/game.js'" js/main.js
+          grep -q "'./store.js'" js/main.js
+          grep -q "'./engine/grid.js'" js/main.js
+          grep -q "'./engine/counter.js'" js/main.js
+          grep -q 'js/gen-worker.js' js/main.js
+          grep -q "'./engine/generate.js'" js/gen-worker.js
+          grep -q "'../engine/solver.js'" js/ui/game.js
+          grep -q "'../engine/grid.js'" js/ui/game.js
+          # 存档只有一个键，而且闸与产品用的是同一个字符串：分家就是"闸在读一份玩家看不见的档"。
+          grep -q 'norinori.save.v1' js/store.js
+          grep -q 'norinori.save.v1' tools/scenarios.js
+          # [hidden] 那条带 !important 的规则必须站在表首：#win-veil 平时是 display:grid，
+          # 按层叠顺序它会盖掉 UA 的 [hidden]{display:none}，遮罩就永久挡指针。
+          head -5 css/game.css | grep -q '\[hidden\] { display: none !important; }'
+
+      # _tmp-* 是临时探针的命名约定：check.mjs 按前缀跳过它们（不让探针冒充源文件数），
+      # .gitignore 把它们挡住，但"跳过 + 忽略"合起来等于"没人看过它们"。提交里真出现一个，
+      # 说明有人 `git add -f` 过 —— 那 CI 是最后一个还能响的地方。
+      - name: No scratch probes committed
+        run: |
+          found=$(git ls-files | grep -E '(^|/)_tmp-' || true)
+          if [ -n "$found" ]; then
+            echo '::error::提交里有 _tmp- 前缀的探针文件：'"$found"
+            exit 1
+          fi
+
+  # 真浏览器闸：headless Chrome + 裸 CDP，读 DOM 矩形/文本与画布像素，落子一律真指针、按键一律
+  # 真键事件；期望值由 node 侧证人经 window.__expectRaw 注进来，页面从不照它摆自己的状态。
+  # tools/verify.sh 自己跑两种 URL 形态（仓库=文档根的 root 形态，和 Pages 的 /<仓库名>/ 前缀形态）。
+  # 前缀形态不是仪式感：根形态是唯一一种能被本地服务器"蒙对"的形态，同组织已经因为只测根形态
+  # 红过一次（部署站点 404、本地闸全绿）。
+  browser:
+    name: real browser gate (both URL shapes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 台架是裸 CDP 驱动，用的是 Node 22 才有的全局 WebSocket/fetch；在 20 上第一次 attach
+      # 就死在 "WebSocket is not defined"，一条断言都跑不到。
+      # ubuntu-latest 镜像自带 google-chrome 且在 PATH 上，正是 tools/verify.sh 找 Chrome 的候选名之一。
+      # 不给它加 swiftshader 那套 flag：软件光栅会把每一核占满，而且本闸有一半断言在拿画布像素
+      # 与 DOM 读数对账，假光栅会让这些读数说谎（verify.sh 头部写了同一条理由）。
+      - name: Browser gate, both shapes (root 5279 + Pages-shaped prefix 5280)
+        env:
+          # 本机十腿 × 两形态约 20 秒；1800 与 verify.sh 自己的默认值一致，是"别替闸作决定"的
+          # 预算而不是打分——调大它不会让一条红的闸变绿。
+          WD_TIMEOUT: 1800
+        run: bash tools/verify.sh
+
+      # 第三种形态：Pages 实际发出去的那批字节。线上服务字节的是 Pages 而不是本仓那份 server.cjs，
+      # 所以这里的"谁能访问"由 pages.yml 的名单决定（index.html + css/ + js/）。
+      # 断言分两半：名单内的模块 200，名单外的（server.cjs、tools/、*.md、package.json）**必须 404**
+      # —— tools/ 里躺着夹具与每张出货盘的答案，跟着 _site 上去就是把它当静态答案发布。
+      - name: Browser gate, Pages allowlist shape (only index.html + css/ + js/ are published)
+        env:
+          WD_TIMEOUT: 1800
+        run: |
+          root=$(mktemp -d)
+          mkdir -p "$root/z-biz-game-norinori-cos"
+          cp -r index.html css js "$root/z-biz-game-norinori-cos/"
+          python3 -m http.server 5501 --bind 127.0.0.1 --directory "$root" &
+          SERVER=$!
+          trap 'kill $SERVER 2>/dev/null' EXIT
+          for i in $(seq 1 40); do
+            curl -fsS -m 2 "http://127.0.0.1:5501/z-biz-game-norinori-cos/" >/dev/null 2>&1 && break
+            sleep 0.25
+          done
+          curl -fsS -m 3 "http://127.0.0.1:5501/z-biz-game-norinori-cos/js/main.js" >/dev/null
+          curl -fsS -m 3 "http://127.0.0.1:5501/z-biz-game-norinori-cos/css/game.css" >/dev/null
+          curl -fsS -m 3 "http://127.0.0.1:5501/z-biz-game-norinori-cos/js/gen-worker.js" >/dev/null
+          for gone in server.cjs package.json DESIGN.md README.md tools/verify.sh tools/fixtures.js tests/shipping.test.mjs; do
+            code=$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://127.0.0.1:5501/z-biz-game-norinori-cos/$gone")
+            [ "$code" = 404 ] || { echo "::error::$gone 在没有它的站点上回了 $code"; exit 1; }
+          done
+          BASE_URL=http://127.0.0.1:5501/z-biz-game-norinori-cos/ bash tools/verify.sh
