@@ -230,8 +230,8 @@ makeShape → digToUnique → polishSolvable → solve → 量难度
    跑 attempt 链，主线程只收进度并显示"已检查 N 张候选盘"），而不是把线抬上去。
    这条边界还在：生成慢不是 bug，把生成挪回主线程才是。
 6. **白格连通不是规则**（第一节）。
-7. **还没做的东西**：Electron 壳，以及"发布之后拿 `BASE_URL=` 手跑一遍部署站点"的那份读数
-   （这一跑不进 CI，理由见第十一节末）。第二、三阶段的入口都已经写在磁盘上并被总门点名
+7. **还没做的东西**：Electron 壳。"发布之后拿 `BASE_URL=` 手跑一遍部署站点"那一趟已经跑过了，
+   读数在第十一节末（这一跑不进 CI，理由也在那一节）。第二、三阶段的入口都已经写在磁盘上并被总门点名
    （`EXTRA_JS`/`SHELLS`，见第八节第 1 条），清单里依旧不许有空头承诺。
 
 ## 十、浏览器壳与浏览器闸（第二阶段）
@@ -361,7 +361,27 @@ Chrome 那三个 `--disable-*-throttling` 标志不是为了跑得快：后台�
 - `--samples=300` 的重量：那是量天花板用的，不是门；写进 CI 就变成每天重测一次结论。
 - `BASE_URL=https://z-biz-game.github.io/z-biz-game-norinori-cos/`：**部署件那一跑不进 CI**。
   CI 里的第三种形状是本地模拟，线上还有 Pages 自己的重定向、缓存头与 base path 的真实行为，
-  所以发布之后要手跑一次并把读数写回这一节（现在还没跑，站点也还没发）。
+  所以发布之后要手跑一次，读数记在本节末尾。
+
+### 首跑读数（远端，2026-09-29，SHA `347deaf`）
+
+两条 workflow 由同一次 push 触发，都是第一次跑：
+
+| run | workflow / job | 读到的东西 |
+| --- | --- | --- |
+| 36482952006 | CI · logic | 10 行 RESULT 全 `ok=true fails=0`：`rule-test 147 / counter-test 437 / solver-test 1284 / generate-test 763 / fixtures 112 / counter-agree-test 244 / r1-equiv-test 137 / shipping-test 134 / balance 277 (samples=150 withheld=0) / check 56`；三条补门（分层 grep、入口接线 17 条、`_tmp-` 不在 `git ls-files`）都过 |
+| 36482952006 | CI · browser | 三种形状各 `10/10 legs reported · 198 checks · 0 failed`，root/prefix 一趟、Pages 名单模拟根一趟，两趟各自 `=== ALL GREEN ===` |
+| 36482952105 | Deploy to GitHub Pages | 部署 success，站点根 200 |
+
+runner 上是 Chrome 153.0.8010.52 + node v22.23.2，本机那一跑是 154.0.8037.57 + v26.8.1 ——
+断言条数与结论一致，墙钟不一致（runner 每形态 19~29s），这正是第七节说的"绝对毫秒只当读数"。
+
+发布之后手跑的第四趟（真站点，`BASE_URL=… bash tools/verify.sh`，本机）：
+`shape=custom 汇总: 10/10 legs reported · 198 checks · 0 failed`，另有 `resumefrag` 那 2 条设计里的红。
+产物边界是对线上逐条 curl 判的，不是照 CI 的临时根推的：`/`、`css/game.css`、`js/main.js`、
+`js/engine/grid.js`、`js/gen-worker.js` 五样 200；`server.cjs`、`package.json`、`DESIGN.md`、
+`README.md`、`tools/verify.sh`、`tools/fixtures.js`、`tests/shipping.test.mjs`、`tools/scenarios.js`
+八样 404 —— 手推答案与闸自己的家伙事都不在站点上。
 
 runner 的墙钟**不能与第七节那张本机表对照**：`balance` 的绝对线照判，但那一列读的是 GitHub
 那台机器的负载。可重现的是结点与链深这两个纯整数计数。
@@ -376,6 +396,7 @@ node tools/generator-probe.mjs               # 只打账不判
 bash tools/verify.sh                         # 浏览器闸：十腿 × 两形态（root 5279 + prefix 5280，CDP 9379）
 SHAPES=root bash tools/verify.sh             # 只跑一种形态，改东西时先这样（每形态约 10s）
 SABOTAGE=1 SHAPES=root LEGS="boot-url" bash tools/verify.sh   # 闸的阴性自证：必须红且 rc≠0
+BASE_URL=https://z-biz-game.github.io/z-biz-game-norinori-cos/ bash tools/verify.sh   # 部署件那一趟（不起服务）
 npm run verify:root                          # 同上那条单形态的 npm 别名
 ```
 

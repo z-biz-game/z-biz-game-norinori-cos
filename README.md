@@ -11,10 +11,13 @@ Nikoli 的二格区域涂黑：题面给你一张**已经切好区域的盘面**
 规则原文钉在 `DESIGN.md` 第一节（两条英文出处逐字抄在那里），因为"骨牌可跨区域"和"白格连通"
 这两点正是网上大多数转述会写反的地方 —— 写反一条，出货的盘就不是同一个谜题。
 
-**本仓现在交付到第三阶段：引擎与门禁 + 浏览器壳 + 浏览器闸 + `.github/workflows/{ci,pages}.yml`。**
-工作流里每一步的命令都在本机原样复跑过（RESULT 行数=10、`js/`↛`tools/` 的分层 grep、入口接线那 17 条、
-Pages 名单形态的"三样 200 + 四样 404"与十腿 198 条），但**还没有可读的线上 URL**：那要等 CI 与 Pages
-在远端真跑一遍，跑完的读数写回这一节，没发生的事不写成既成事实。
+**本仓现在交付到第三阶段：引擎与门禁 + 浏览器壳 + 浏览器闸 + `.github/workflows/{ci,pages}.yml`，
+并且站点是读得到的：`https://z-biz-game.github.io/z-biz-game-norinori-cos/`。**
+远端首跑的读数（CI run 36482952006、Pages run 36482952105，同一 SHA `347deaf`，
+runner 上 Chrome 153.0.8010.52 / node v22.23.2）：logic job 交出 **10 行 RESULT、全部 `ok=true fails=0`**
+（其中 `balance … samples=150 withheld=0`、`check … checks=56`），browser job 交出**三种 URL 形态**、
+每形态 `10/10 legs reported · 198 checks · 0 failed`，Pages 部署成功、站点根回 200。
+对着**线上那一跑**（CI 不跑这一趟，见 DESIGN 第十一节）也手跑过：同样 10 腿 198 条 0 红。
 
 界面里跑的就是 `js/engine/` 那六个模块本身，不是它们的复刻：出题在 `js/gen-worker.js` 里跑，
 主线程只收进度；判定、剖分自洽性、唯一性口径全部由同一个 `grid.js` / `counter.js` 提供。
@@ -52,8 +55,8 @@ node tools/generator-probe.mjs    # 观测器：只打账，不判
 node tools/fixtures.js             # 夹具自检（手写推理自己站不站得住）
 ```
 
-浏览器闸要真 Chrome 和 node ≥22（裸 CDP 用的是全局 `WebSocket`/`fetch`），两种 URL 形态各跑一遍，
-本机 2026-09-29 实测每形态约 10 秒：
+浏览器闸要真 Chrome 和 node ≥22（裸 CDP 用的是全局 `WebSocket`/`fetch`），两种 URL 形态各跑一遍
+（耗时随机器负载走，只当读数，不参与判定）：
 
 ```
 npm run verify                                # = bash tools/verify.sh（root 5279 + Pages 前缀 5280，十腿各一遍）
@@ -62,6 +65,8 @@ LEGS="boot-url store" SHAPES=root bash tools/verify.sh
 SABOTAGE=1 SHAPES=root LEGS="boot-url" bash tools/verify.sh   # 闸的阴性自证：改错一位期望值必须红且 rc≠0
 npm start                                     # 自己开 root 形态（5279）看盘
 npm run prefix                                # 自己开 Pages 前缀形态（5280/z-biz-game-norinori-cos/）
+BASE_URL=https://z-biz-game.github.io/z-biz-game-norinori-cos/ bash tools/verify.sh
+                                                # 对着线上那一跑：脚本不起任何服务，只开一次 Chrome
 ```
 
 结尾那一行 `=== ALL GREEN（这一跑实际覆盖的 URL 形态：root prefix）===` 才是结论：
