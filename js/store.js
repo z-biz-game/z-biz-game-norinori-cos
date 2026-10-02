@@ -66,6 +66,11 @@ function okShape(data) {
 }
 
 // 读一次。坏档一律读成"没有档"，并且把它抹掉：留着只会让玩家每次刷新都看见同一个谎。
+//
+// 两段式：**版本对得上**的档里，resume 与 totals 各判各的。合在一起判的话，
+// 一份写坏的 resume（比如 marks 与格数差一格）会连带把跨局的账一起抹掉 ——
+// 那笔账是玩家真实玩过的局数，它并没有坏。坏哪段就只丢哪段。
+// 解不开的字节与版本不符是"整个形状不认识"，那仍然是全部作废并抹掉。
 export function load() {
   const s = storage();
   if (!s) return { resume: null, totals: emptyTotals(), available: false };
@@ -82,7 +87,7 @@ export function load() {
   } catch {
     data = null;
   }
-  if (!okShape(data)) {
+  if (data === null || typeof data !== 'object' || data.version !== SAVE_VERSION) {
     try {
       s.removeItem(SAVE_KEY);
     } catch {
@@ -90,7 +95,11 @@ export function load() {
     }
     return { resume: null, totals: emptyTotals(), available: true };
   }
-  return { resume: data.resume, totals: data.totals, available: true };
+  return {
+    resume: okResume(data.resume) ? data.resume : null,
+    totals: okTotals(data.totals) ? data.totals : emptyTotals(),
+    available: true,
+  };
 }
 
 // 整体写入：调用方给哪一块就换哪一块，另一块从磁盘上读回来接着用。

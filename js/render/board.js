@@ -18,6 +18,23 @@ export class BoardView {
     this.reg = null;
     this.w = 0;
     this.h = 0;
+    this.paper = null;
+    this.paperPattern = null;
+    this.loadPaper();
+  }
+
+  // 纸纹：位图由 assets/gen/make_art.py 生成（近白、摆幅 0..2/255），按 document.baseURI 解析
+  // ——Pages 把站点发在 /<仓库名>/ 前缀下，硬编 "/textures/…" 在这一形 404。
+  // 加载失败（file:// 直开、资源被策略挡掉）就退回平涂：纹理是材质，不是判定，不该为此抛异常。
+  loadPaper() {
+    if (typeof Image !== 'function') return;
+    const img = new Image();
+    img.onload = () => {
+      this.paper = img;
+      this.paperPattern = this.ctx.createPattern ? this.ctx.createPattern(img, 'repeat') : null;
+    };
+    img.onerror = () => { this.paper = null; };
+    img.src = new URL('textures/paper-256.png', document.baseURI).href;
   }
 
   setPuzzle(reg, w, h) {
@@ -142,6 +159,17 @@ export class BoardView {
       ctx.stroke();
     }
 
+    // 纸纹叠层：multiply 一遍近白的噪声（摆幅 0..2/255 ⇒ 亮度最多降 0.8%）。
+    // 画在"底 + 棋格 + 粗细线"之后、黑格与白点之前：那两样是判定色，一个字节都不许被改过，
+    // 而底纹的 0.8% 落在闸的取样容差（≤12）里，且离"内边距 dist ≤8"那条也还有余量。
+    if (this.paperPattern) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = this.paperPattern;
+      ctx.fillRect(0, 0, g.size, g.size);
+      ctx.restore();
+    }
+
     for (let i = 0; i < this.w * this.h; i += 1) {
       const { x, y, s } = this.cellRect(i);
       const v = state[i];
@@ -157,17 +185,43 @@ export class BoardView {
       }
     }
 
-    const ring = (i, color, widthRatio) => {
+    // 提示环的呼吸：pulse∈[0,1) 是仿真时钟的相位，±18% 半径。pulse 恒 0 就是静图
+    // ——reduceMotion 下 main.js 把它钉在 0，这里不需要再判一次。
+    const pulse = 1 + 0.18 * Math.sin((view.pulse || 0) * Math.PI * 2);
+    const ring = (i, color, widthRatio, breathe = 1) => {
       if (i == null || !state || i >= state.length) return;
       const { x, y, s } = this.cellRect(i);
       const wpx = Math.max(2, s * widthRatio);
+      const shrink = (breathe - 1) * s * 0.5;
       ctx.strokeStyle = color;
       ctx.lineWidth = wpx;
-      ctx.strokeRect(x + wpx / 2, y + wpx / 2, s - wpx, s - wpx);
+      ctx.strokeRect(x + wpx / 2 - shrink, y + wpx / 2 - shrink, s - wpx + 2 * shrink, s - wpx + 2 * shrink);
     };
     ring(view.selected, Palette.selected, 0.07);
-    for (const i of view.hints || []) ring(i, Palette.hint, Board.hintRing);
+    for (const i of view.hints || []) ring(i, Palette.hint, Board.hintRing, pulse);
     for (const i of view.wrong || []) ring(i, Palette.wrong, Board.hintRing);
+
+    // 落子涟漪：每颗都裁在**它所在那格的内 70% 盒子**里。这不是好看，是不越界——
+    // 闸在共边中点与粗线上取样判色，粒子跑出格子就会把 accent 盖到判据上。
+    const parts = view.particles || [];
+    if (parts.length) {
+      ctx.save();
+      ctx.beginPath();
+      for (const p of parts) {
+        const { x, y, s } = this.cellRect(p.cell == null ? 0 : p.cell);
+        ctx.rect(x + s * 0.15, y + s * 0.15, s * 0.7, s * 0.7);
+      }
+      ctx.clip();
+      for (const p of parts) {
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.life)) * 0.55;
+        ctx.fillStyle = p.kind === 2 ? Palette.wrong : p.kind === 1 ? Palette.dot : Palette.accent;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(1, this.geo.cell * 0.05 * (0.6 + p.life)), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
   }
 }
 

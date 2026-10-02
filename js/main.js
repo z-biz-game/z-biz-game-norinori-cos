@@ -8,15 +8,19 @@
 //     页面只拿它跟自己比，从不照它摆自己的状态。URL 里只认 ?tier=&seed= ——
 //     同一个文档里换个 #fragment 不算导航，用它当交接通道等于让闸自己对自己。
 //  4) 墙钟只当读数，绝不当输入：elapsedMs 只进面板与存档，种子里不许有 Date/performance。
+//     新增的 rAF 循环守同一条：帧 dt 只喂 js/ui/feel.js 里那个定步长累加器（动画），
+//     以及冻结/恢复计时底数（读数）。题面、判定、落子没有一处读 performance.now()。
 
 import { applyThemeVars } from './theme.js';
 import { BoardView } from './render/board.js';
 import { Game } from './ui/game.js';
+import { Feel } from './ui/feel.js';
 import { BLACK, WHITE, UNKNOWN, RULES, stateToBlack } from './engine/solver.js';
 import { validatePartition, checkSolution } from './engine/grid.js';
 import { TIERS, tierByKey, generate } from './engine/generate.js';
 import { derive } from './engine/rng.js';
 import { countByRegion } from './engine/counter.js';
+import { blip, isMuted, setMuted, stats as audioStats } from './audio.js';
 import * as store from './store.js';
 
 const DEFAULT_SEED = 20260929; // 不是按日期算的：换一局走 derive(seed,'next')，链子决定论、能复现
@@ -44,10 +48,20 @@ const dom = {
   attemptN: el('attempt-n'),
   totals: el('totals'),
   msg: el('msg'),
+  pause: el('pause'),
+  mute: el('mute'),
+  fullscreen: el('fullscreen'),
+  clock: el('clock'),
 };
+
+// 系统"减少动态效果"的那一条：CSS 里的 @media 只管得到 transition/animation，
+// 画布上的涟漪与提示环的呼吸是 JS 画的，必须在这里也有一支。
+// typeof 判一下就好：node 侧（逻辑门）没有 matchMedia，那是环境边界，不是防御性写作。
+const REDUCED_MOTION = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 
 const view = new BoardView(dom.canvas);
 const game = new Game(new Uint8Array(0), 0, 0);
+const feel = new Feel(DEFAULT_SEED, { reducedMotion: !!(REDUCED_MOTION && REDUCED_MOTION.matches) });
 
 const S = {
   tierKey: DEFAULT_TIER,
@@ -67,6 +81,9 @@ const S = {
   pinned: false,
   restored: false,
   bootedFrom: '',
+  paused: false,
+  solved: false,
+  lastFrame: performance.now(),
 };
 
 let worker = null;
@@ -74,7 +91,8 @@ let reqSeq = 0;
 
 const regStr = (reg = game.reg) => Array.from(reg).join(',');
 const seedText = () => `0x${(S.seed >>> 0).toString(16)}`;
-const elapsedMs = () => Math.round(S.baseElapsedMs + (performance.now() - S.startedAt));
+// 暂停就是"这一段不再往上走"：setPaused 把已走过的时段收进 baseElapsedMs，这里就不再叠当前那半段。
+const elapsedMs = () => Math.round(S.baseElapsedMs + (S.paused ? 0 : performance.now() - S.startedAt));
 
 function urlState() {
   const q = new URLSearchParams(location.search);
@@ -145,8 +163,12 @@ function newGame(tierKey = S.tierKey, seed = S.seed, advance = false) {
   S.hintCells = [];
   S.wrong = [];
   S.restored = false;
+  S.paused = false;
+  S.lastFrame = S.startedAt;
+  feel.reset(S.seed); // 换一局就是换一条仿真链：时钟、累加器、粒子、脉冲全复位
   dom.veil.hidden = true;
   dom.tier.value = S.tierKey;
+  syncHud();
   requestNew();
 }
 
@@ -205,14 +227,18 @@ function restore(resume) {
   S.attemptNo = resume.attemptNo;
   S.baseElapsedMs = resume.elapsedMs;
   S.startedAt = performance.now();
-  S.totals = store.load().totals;
+  S.lastFrame = S.startedAt;
+  S.paused = false;
   S.restored = true;
+  S.totals = store.load().totals;
+  feel.reset(S.seed);
   game.setPuzzle(reg, resume.w, resume.h);
   view.setPuzzle(reg, resume.w, resume.h);
   game.decode(resume.marks);
   game.moves = resume.moves;
   game.hints = resume.hints;
   layout();
+  syncHud();
   render();
   setMsg(`从存档续局（种子 ${seedText()}，已落 ${game.moves} 子）`);
   signalBoard();
@@ -233,14 +259,79 @@ function setMsg(text) {
   S.msg = text;
 }
 
+// 暂停期间拒绝一切改局面的输入：只灰掉按钮不算暂停——玩家照样能把这盘推完，
+// 那"暂停"就只是一行字。返回 true 表示这次输入被挡下了，调用方直接收工。
+function whilePaused() {
+  if (!S.paused) return false;
+  setMsg('已暂停：按 P（或再点一次暂停）继续');
+  render();
+  return true;
+}
+
 function say(text, cls) {
   dom.status.textContent = text;
   dom.status.className = `read${cls ? ` ${cls}` : ''}`;
 }
 
+// 一次画布提交：题面 + 手感层的两份读数（提示环相位、涟漪位置）。
+// render() 里同步调它，rAF 循环里也调它 —— 闸在真点击之后**同一个任务**里取样像素，
+// 等不到下一个 rAF，所以"界面变了"到"画布上已经是了"之间不许隔着一次帧边界。
+function paint() {
+  if (!view.geo) return;
+  view.draw(game.state, {
+    selected: S.selected,
+    hints: S.hintCells,
+    wrong: S.wrong,
+    pulse: feel.pulsePhase,
+    particles: feel.count ? feel.renderPos(0) : [],
+  });
+}
+
+// 手感与开关的读数，全是标量：外部的帧率对拍工具（不能 import 本仓 ESM 的那类）
+// 靠它在三种帧率下比同一份状态。名字里带 phase 的脉冲是仿真相位，不是墙钟。
+function stateReadout() {
+  const a = audioStats();
+  return {
+    phase: S.generating ? 'generating' : S.paused ? 'paused' : S.solved ? 'solved' : 'playing',
+    paused: S.paused,
+    muted: isMuted(),
+    audioNodes: a.nodes,
+    audioCtx: a.ctxState,
+    fullscreen: !!document.fullscreenElement,
+    reducedMotion: feel.reducedMotion,
+    simTime: feel.simTime,
+    simSteps: feel.simSteps,
+    pulsePhase: feel.pulsePhase,
+    particles: feel.count,
+    spawned: feel.spawned,
+    elapsedMs: elapsedMs(),
+    moves: game.moves,
+    hintsUsed: game.hints,
+  };
+}
+
+function syncHud() {
+  dom.pause.setAttribute('aria-pressed', String(S.paused));
+  dom.pause.classList.toggle('on', S.paused);
+  dom.mute.setAttribute('aria-pressed', String(isMuted()));
+  dom.mute.classList.toggle('on', isMuted());
+  dom.fullscreen.setAttribute('aria-pressed', String(!!document.fullscreenElement));
+  dom.clock.classList.toggle('paused', S.paused);
+}
+
+// 涟漪的落点问的是 view 刚用过的那批数（cellRect），所以它与画出来的格子永远对齐。
+// 位置存的是**画布 CSS 像素**：窗口一变几何就变，但 board.js 按格序号裁剪，
+// 于是老坐标最坏只是画在错的那格里，跑不出棋盘——判色取样点一个字节都没被盖到。
+function ripple(i, kind) {
+  if (!view.geo || i == null) return;
+  const { x, y, s } = view.cellRect(i);
+  feel.spawn(x + s / 2, y + s / 2, s, i, kind, 10);
+}
+
 function render() {
-  if (view.geo) view.draw(game.state, { selected: S.selected, hints: S.hintCells, wrong: S.wrong });
+  paint();
   const st = game.status();
+  S.solved = st.solved === true; // 逐帧的读数用这份缓存，不再为 phase 重跑一遍规则
   const partition = game.n ? validatePartition(game.reg, game.w, game.h) : { ok: false, regionCount: 0 };
   const regionCount = partition.regionCount || 0;
   const wantBlack = 2 * regionCount;
@@ -287,7 +378,13 @@ function showVeil(st, regionCount) {
 // ── 交互 ──────────────────────────────────────────────────────────────
 function putAt(i) {
   if (S.generating || i == null || !game.n) return;
-  if (!game.put(i, S.pen)) return;
+  if (whilePaused()) return;
+  if (!game.put(i, S.pen)) {
+    blip('deny');
+    return;
+  }
+  ripple(i, S.pen === BLACK ? 0 : 1);
+  blip(S.pen === BLACK ? 'black' : 'white');
   afterMove(`第 ${i} 格`);
 }
 
@@ -296,7 +393,10 @@ function afterMove(what) {
   S.wrong = [];
   const st = game.status();
   store.addTotals({ moves: 1 });
-  if (st.solved) store.addTotals({ solved: 1 });
+  if (st.solved) {
+    store.addTotals({ solved: 1 });
+    blip('win');
+  }
   S.totals = store.load().totals;
   setMsg(st.solved ? '推完了' : what);
   persist();
@@ -313,11 +413,14 @@ function setPen(p) {
 
 function doHint() {
   if (S.generating || !game.n) return;
+  if (whilePaused()) return;
   const one = game.hint();
   if (one.conflict) {
     setMsg(`提示说：这一局已经矛盾了（第 ${one.conflict.cell} 格）`);
+    blip('deny');
   } else if (!one.fact) {
     setMsg('提示说：这一步五条局部规则都推不出必然结论——该换个角度了');
+    blip('deny');
   } else {
     const f = one.fact;
     S.hintCells = [f.cell];
@@ -325,6 +428,8 @@ function doHint() {
     store.addTotals({ hints: 1 });
     S.totals = store.load().totals;
     setMsg(`${f.rule}：${RULES[f.rule]}（第 ${f.cell} 格${f.value === BLACK ? '涂黑' : '点白'}）`);
+    ripple(f.cell, f.value === BLACK ? 0 : 1);
+    blip('white');
     persist();
   }
   render();
@@ -337,6 +442,7 @@ function doCheck() {
   if (st.conflict) {
     S.wrong = [st.conflict.cell];
     setMsg(`矛盾在第 ${st.conflict.cell} 格：${st.conflict.why}`);
+    blip('deny');
   } else if (st.violation) {
     if (st.violation.rule === 'R1') {
       S.wrong = st.violation.cells;
@@ -345,6 +451,7 @@ function doCheck() {
       S.wrong = [];
       setMsg(`区域数不对：${st.violation.regions.length} 块区域的黑格数不是 2（区域 ${st.violation.regions.join('、')}）`);
     }
+    blip('deny');
   } else if (!st.filled) {
     S.wrong = [];
     setMsg(`还没落满：未定 ${st.counts.unknown} 格，落下的那些都合法`);
@@ -356,6 +463,7 @@ function doCheck() {
 }
 
 function doUndo() {
+  if (whilePaused()) return;
   const last = game.undo();
   if (!last) {
     setMsg('没有可撤的落子');
@@ -364,6 +472,8 @@ function doUndo() {
     S.hintCells = [];
     S.wrong = [];
     setMsg(`撤销第 ${last.i} 格`);
+    ripple(last.i, 2);
+    blip('erase');
   }
   persist();
   render();
@@ -371,9 +481,15 @@ function doUndo() {
 }
 
 function doClear() {
+  if (whilePaused()) return;
+  // 擦子的涟漪只给**真的被擦掉**的那些格：先记下满的格子，clearAll 之后就查不到了。
+  const filled = [];
+  for (let i = 0; i < game.n; i += 1) if (game.state[i] !== UNKNOWN) filled.push(i);
   game.clearAll();
   S.hintCells = [];
   S.wrong = [];
+  for (const i of filled) ripple(i, 2);
+  if (filled.length) blip('erase');
   setMsg('棋盘清空');
   persist();
   render();
@@ -389,12 +505,82 @@ function moveSelected(dr, dc) {
 }
 
 function eraseSelected() {
-  if (S.selected == null || !game.erase(S.selected)) return;
+  if (S.selected == null) return;
+  if (whilePaused()) return;
+  if (!game.erase(S.selected)) return;
+  ripple(S.selected, 2);
+  blip('erase');
   store.addTotals({ moves: 1 });
   S.totals = store.load().totals;
   setMsg(`擦掉第 ${S.selected} 格`);
   persist();
   render();
+}
+
+// ── 暂停 / 静音 / 全屏：三枚开关都动真状态，不是只改一行字 ────────────
+// 暂停这一支改两处：**计时**（把已走过的这段收进底数，之后读数不再叠当前那半段）与
+// **仿真**（feel.pause() 之后一个步都不走，恢复也不补跑）。只灰掉按钮不算暂停。
+function setPaused(on) {
+  const next = !!on;
+  if (next === S.paused) {
+    syncHud();
+    return next;
+  }
+  const now = performance.now();
+  if (next) S.baseElapsedMs += now - S.startedAt;
+  else S.startedAt = now; // 重新对齐：盯着暂停面板的那段时间不许进计时
+  S.paused = next;
+  if (next) feel.pause();
+  else feel.resume();
+  setMsg(next ? '已暂停：计时与涟漪都停在这一刻' : '继续这一局');
+  render();
+  return next;
+}
+
+function applyMute(on) {
+  const next = setMuted(on);
+  setMsg(next ? '已静音：上下文挂起，且不再新建任何音节点' : '声音恢复');
+  syncHud();
+  render();
+  return next;
+}
+
+function toggleMuteNow() {
+  return applyMute(!isMuted());
+}
+
+// requestFullscreen/exitFullscreen 都返回 Promise：没有用户手势、或被 iframe 策略挡住时会 reject。
+// 不接住就是控制台里一条未捕获拒绝 —— 那会把"这个环境不允许全屏"读成"这枚按钮坏了"。
+const quietly = (op) => {
+  if (op && op.catch) op.catch(() => {});
+};
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) quietly(document.exitFullscreen());
+  else quietly(document.documentElement.requestFullscreen());
+  return !document.fullscreenElement;
+}
+
+function tickClock() {
+  const t = Math.floor(elapsedMs() / 1000);
+  const txt = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+  if (dom.clock.textContent !== txt) dom.clock.textContent = txt; // 秒变了才碰 DOM
+}
+
+// 帧间最长算 0.25 秒：从后台标签页回到前台时那一下的墙钟差是几十秒，
+// 不封顶就会在一帧里跑几千步（spiral of death），而粒子的可见寿命远短于这个量级——多跑的那些只是白算。
+// 三种刷新率下每帧都远小于这个上限，所以它对帧率对拍是**中性**的。
+const MAX_FRAME_DT = 0.25;
+
+function frame(now) {
+  const dt = Math.min(MAX_FRAME_DT, Math.max(0, (now - S.lastFrame) / 1000)); // 全页唯一一处吃帧 dt 的算术
+  S.lastFrame = now;
+  const steps = feel.advance(dt); // 它只喂定步长累加器：判定与题面一个字都不看它
+  // 还有东西在动才值得再提交一帧画布；静图就停笔，CPU 归零。
+  if (steps > 0 && (feel.count > 0 || S.hintCells.length > 0)) paint();
+  tickClock();
+  window.norinoriState = stateReadout();
+  requestAnimationFrame(frame);
 }
 
 // ── 事件接线 ──────────────────────────────────────────────────────────
@@ -435,6 +621,10 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'u') doUndo();
   else if (k === 'h') doHint();
   else if (k === 'n') newGame(S.tierKey, S.seed, true);
+  else if (k === 'r') newGame(S.tierKey, S.seed, false); // 同一颗种子重开：拿回的是**同一张盘**
+  else if (k === 'p') setPaused(!S.paused);
+  else if (k === 'm') toggleMuteNow();
+  else if (k === 'f') toggleFullscreen();
   else return;
   e.preventDefault();
 });
@@ -455,6 +645,17 @@ dom.hint.addEventListener('click', doHint);
 dom.undo.addEventListener('click', doUndo);
 dom.check.addEventListener('click', doCheck);
 dom.clear.addEventListener('click', doClear);
+dom.pause.addEventListener('click', () => setPaused(!S.paused));
+dom.mute.addEventListener('click', () => toggleMuteNow());
+dom.fullscreen.addEventListener('click', () => toggleFullscreen());
+// 全屏的状态在 fullscreenchange 那一刻才算数（requestFullscreen 返回的 Promise 之后才置上
+// document.fullscreenElement）；:root:fullscreen 那几条 CSS 改了 .board-wrap 的宽度，
+// 所以这一格还得重算布局——否则全屏后画布仍是窗口模式那套数。
+document.addEventListener('fullscreenchange', () => {
+  syncHud();
+  layout();
+  render();
+});
 
 let resizeTimer = 0;
 window.addEventListener('resize', () => {
@@ -504,6 +705,7 @@ const facade = {
       restored: S.restored,
       bootedFrom: S.bootedFrom,
       storeAvailable: store.load().available,
+      runtime: stateReadout(),
     };
   },
   geo: () => view.geo,
@@ -519,6 +721,12 @@ const facade = {
   dom,
   newGame,
   setPen,
+  // 三枚开关也交出去：浏览器那一侧的对拍要**按下它**再读效果（计时冻没冻、仿真走没走、全屏进没进），
+  // 而不是去认一行字。返回的都是 stateReadout()，与玩家眼前那一份同源。
+  setPaused,
+  toggleMute: toggleMuteNow,
+  toggleFullscreen,
+  runtime: stateReadout,
   // 独立 import 引擎再判一次：页面上的读数与引擎的读数必须是同一句话。
   rejudge(marks) {
     const g = new Game(Uint8Array.from(game.reg), game.w, game.h);
@@ -568,6 +776,20 @@ window.norinori = facade;
 applyThemeVars();
 const url = urlState();
 setPen(BLACK);
+syncHud();
+tickClock();
+
+// 系统偏好是**可改的**：控制面板里关掉"减少动态效果"，画布上的涟漪与呼吸就该当场回来。
+if (REDUCED_MOTION && REDUCED_MOTION.addEventListener) {
+  REDUCED_MOTION.addEventListener('change', (e) => {
+    feel.setReducedMotion(e.matches);
+    paint();
+    window.norinoriState = stateReadout();
+  });
+}
+
+S.lastFrame = performance.now();
+requestAnimationFrame(frame);
 
 (function boot() {
   const saved = store.load();

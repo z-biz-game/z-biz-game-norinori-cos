@@ -161,7 +161,7 @@ PARSER
 # 这一轮起名单里还包括 PWA 那几字节与两张真被引用的位图：漏发一张图在本地 root 形态下
 # 看不见（那台 server.cjs 发的是整棵仓库），只有按字节比对才抓得到"线上少发了什么"。
 PREFLIGHT_RELS="index.html css/game.css js/main.js js/store.js js/gen-worker.js js/theme.js \
-js/ui/game.js js/render/board.js js/engine/rng.js js/engine/grid.js js/engine/counter.js \
+js/ui/game.js js/ui/feel.js js/audio.js js/render/board.js js/engine/rng.js js/engine/grid.js js/engine/counter.js \
 js/engine/solver.js js/engine/generate.js js/pwa.js sw.js manifest.json \
 icons/icon-192.png textures/paper-256.png"
 preflight() {
