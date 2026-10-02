@@ -128,7 +128,8 @@ jobs:
         run: |
           root=$(mktemp -d)
           mkdir -p "$root/z-biz-game-norinori-cos"
-          cp -r index.html css js "$root/z-biz-game-norinori-cos/"
+          cp index.html manifest.json sw.js "$root/z-biz-game-norinori-cos/"
+          cp -r css js icons textures "$root/z-biz-game-norinori-cos/"
           python3 -m http.server 5501 --bind 127.0.0.1 --directory "$root" &
           SERVER=$!
           trap 'kill $SERVER 2>/dev/null' EXIT
@@ -139,7 +140,13 @@ jobs:
           curl -fsS -m 3 "http://127.0.0.1:5501/z-biz-game-norinori-cos/js/main.js" >/dev/null
           curl -fsS -m 3 "http://127.0.0.1:5501/z-biz-game-norinori-cos/css/game.css" >/dev/null
           curl -fsS -m 3 "http://127.0.0.1:5501/z-biz-game-norinori-cos/js/gen-worker.js" >/dev/null
-          for gone in server.cjs package.json DESIGN.md README.md tools/verify.sh tools/fixtures.js tests/shipping.test.mjs; do
+          # 首页与 css 真在引的字节必须真在名单里：漏一个就是线上裂图 / 永远装不上，
+          # 而本地 root 形态（server.cjs 发整棵仓库）看不见这件事。
+          curl -fsS -m 3 "http://127.0.0.1:5501/z-biz-game-norinori-cos/manifest.json" >/dev/null
+          curl -fsS -m 3 "http://127.0.0.1:5501/z-biz-game-norinori-cos/sw.js" >/dev/null
+          curl -fsS -m 3 "http://127.0.0.1:5501/z-biz-game-norinori-cos/icons/icon-192.png" >/dev/null
+          curl -fsS -m 3 "http://127.0.0.1:5501/z-biz-game-norinori-cos/textures/washi-512.png" >/dev/null
+          for gone in server.cjs package.json DESIGN.md README.md tools/verify.sh tools/fixtures.js tests/shipping.test.mjs assets/gen/make_art.py; do
             code=$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://127.0.0.1:5501/z-biz-game-norinori-cos/$gone")
             [ "$code" = 404 ] || { echo "::error::$gone 在没有它的站点上回了 $code"; exit 1; }
           done

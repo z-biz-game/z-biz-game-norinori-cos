@@ -7,13 +7,25 @@
 * { box-sizing: border-box; }
 
 body {
+  /* 和纸底纹由 assets/gen/make_art.py 生成（512×512 平铺）。为什么是位图而不是渐变：
+     渐变在任何 DPR 上都是同一条数学式，放大到 iPad 就看得出"没有纸"；噪声图平铺到
+     任何尺寸都是同一份纤维。--page-bg 仍然站在底色位置上（纹理只是 ±3 的抖动）。 */
   margin: 0;
-  background: var(--page-bg);
+  background-color: var(--page-bg);
+  background-image: url('../textures/washi-512.png');
+  background-repeat: repeat;
   color: var(--ink);
   font: var(--font-ui);
+  /* safe-area：viewport-fit=cover 之后 env() 才有非零值。为什么四边都要：横屏 iPhone 的
+     刘海在左、底部横条在下，只补 top 等于把左列按钮塞进圆角里。 */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
-header { padding: var(--space-pad) var(--space-pad) 0; }
+header {
+  padding: max(var(--space-pad), env(safe-area-inset-top)) var(--space-pad) 0;
+  padding-left: max(var(--space-pad), env(safe-area-inset-left));
+  padding-right: max(var(--space-pad), env(safe-area-inset-right));
+}
 h1 { margin: 0; font-size: 22px; letter-spacing: .04em; }
 h1 .sub { color: var(--ink-quiet); font-size: 14px; font-weight: 400; }
 .rule { margin: 8px 0 0; max-width: 62ch; color: var(--ink); }
@@ -26,7 +38,15 @@ main {
   gap: var(--space-gap);
   align-items: flex-start;
   padding: var(--space-pad);
+  padding-left: max(var(--space-pad), env(safe-area-inset-left));
+  padding-right: max(var(--space-pad), env(safe-area-inset-right));
 }
+
+/* 全屏（#fullscreen → requestFullscreen）：画布居中、面板贴着底部安全区收成一排。
+   不做这一条的话全屏下面板会压在 :root 的左下角，横屏手机上够不着。 */
+:root:fullscreen .board-wrap { flex: 0 0 auto; margin: 0 auto; }
+:root:fullscreen main { align-items: center; }
+:root:fullscreen .panel { padding-bottom: max(var(--space-pad), env(safe-area-inset-bottom)); }
 
 .board-wrap {
   /* 宽度由这条 flex 规则定死，画布只是里面的孩子：
@@ -53,6 +73,7 @@ main {
   text-align: center;
   border-radius: var(--space-radius);
   background: color-mix(in srgb, var(--panel-bg) 88%, transparent);
+  animation: veil-in var(--motion-ms) ease;
 }
 #win-veil .big { margin: 0; font-size: 26px; color: var(--hint); }
 #win-veil .why { margin: 0; color: var(--ink-quiet); max-width: 30ch; }
@@ -77,10 +98,27 @@ button, select {
   padding: 7px 11px;
   cursor: pointer;
   transition: border-color var(--motion-ms) ease, color var(--motion-ms) ease;
+  /* 44px 是**命中盒**的下限，不是视觉高度：触摸目标由 border-box 算，只把 padding 撑大
+     会得到"看着挺大、指尖偏半格就点不中"。所以 min-height/min-width 直接钉 border-box。
+     画布上每一格的边长下限另有 theme.js 的 Board.cellMin=30 管，那是另一条账。 */
+  min-height: 44px;
+  min-width: 44px;
 }
 button:hover { border-color: var(--accent); }
 button:focus-visible { outline: 2px solid var(--selected); outline-offset: 2px; }
+button:disabled { opacity: .45; cursor: default; }
 label { color: var(--ink-quiet); }
+select { min-height: 44px; }
+
+/* HUD 三个开关的按下态由 aria-pressed 说，不由 class 说：读屏软件读的是前者，
+   两套并存的迟早会分家。 */
+.hud button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--board-bg));
+}
+.clock { color: var(--ink-quiet); font-variant-numeric: tabular-nums; }
+.clock.paused { color: var(--accent); }
 
 .read { margin: 0; font-variant-numeric: tabular-nums; color: var(--ink); }
 /* 状态行的红与绿是**元素身上的类**，不是内嵌的 span：main.js 一律用 textContent 写读数，
@@ -92,5 +130,25 @@ label { color: var(--ink-quiet); }
 .help { color: var(--ink-quiet); }
 .help summary { cursor: pointer; }
 
-footer { padding: 0 var(--space-pad) var(--space-pad); max-width: 78ch; }
+footer {
+  padding: 0 var(--space-pad) var(--space-pad);
+  padding-left: max(var(--space-pad), env(safe-area-inset-left));
+  padding-right: max(var(--space-pad), env(safe-area-inset-right));
+  padding-bottom: max(var(--space-pad), env(safe-area-inset-bottom));
+  max-width: 78ch;
+}
 footer code { color: var(--accent); }
+
+/* prefers-reduced-motion：这一条不是"少动一点"，是"把动效这一层整个关掉"。
+   --motion-ms 由 js/theme.js 推到 :root，所以这里必须覆盖变量本身；
+   canvas 那一侧的粒子/涟漪/脉冲由 js/main.js 读同一个媒体查询后真跳过（见 REDUCED_MOTION），
+   两边各关一半就是"设置了还是晕"。纸纹留着：它是材质，不是动效。 */
+@media (prefers-reduced-motion: reduce) {
+  button, select { transition: none; }
+  #win-veil { animation: none !important; transition: none !important; }
+  :root { --motion-ms: 0ms; }
+}
+
+/* 胜利卡片淡入：时长跟着 --motion-ms 走，所以上面那条 reduce 分支一关就成"瞬时出现"。
+   没有基线动画的 reduce 分支等于在关掉一个不存在的东西。 */
+@keyframes veil-in { from { opacity: 0; } to { opacity: 1; } }

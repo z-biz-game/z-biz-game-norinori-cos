@@ -16,7 +16,7 @@
      的强调金 `#f2c14e` 环住 = "这一格必然是白"），另一颗点在右下角。
      这两样只在 ≥64px 上画：16/32px 上它们只是噪声。
 
-尺寸口径（006_商业化就绪度标准.md §3）：favicon 16/32/48/64、apple-touch-icon 180、
+尺寸口径（006_商业化就绪度标准.md §3）：favicon 16/32/48、apple-touch-icon 180、
 PWA 192/512 + maskable-512、母图 1024、社交卡 1200×630。
 另有两张**真的会被画进像素**的纹理：
   textures/paper-256.png  棋盘纸纹（近白、摆幅 0..2/255，画布上用 multiply 叠，
@@ -53,7 +53,7 @@ ACCENT = (242, 193, 78)        # Palette.accent
 INK = (232, 230, 223)          # Palette.ink
 QUIET = (154, 160, 173)        # Palette.inkQuiet
 
-ICON_SIZES = [16, 32, 48, 64, 180, 192, 512, 1024]
+ICON_SIZES = [16, 32, 48, 180, 192, 512, 1024]
 
 FONT_CANDIDATES = [
     '/System/Library/Fonts/Hiragino Sans GB.ttc',
@@ -269,7 +269,7 @@ def main():
     master = domino_master(1024)
     master.save(os.path.join(icons, 'icon-1024.png'), 'PNG', optimize=True)
     named = {180: 'apple-touch-icon.png', 192: 'icon-192.png', 512: 'icon-512.png',
-             16: 'favicon-16.png', 32: 'favicon-32.png', 48: 'favicon-48.png', 64: 'favicon-64.png'}
+             16: 'favicon-16.png', 32: 'favicon-32.png', 48: 'favicon-48.png'}
     for s in ICON_SIZES:
         if s == 1024:
             continue

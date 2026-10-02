@@ -158,9 +158,12 @@ PARSER
 # ---- pre-flight: 即将被检的那几字节就是本仓 ---------------------------------------------------------
 # 端口上坐着*别的*东西是这个闸存在的意义；"页面加载了"不够 —— SPA fallback、目录列表、孤儿 checkout
 # 都能让场景跑起来，只是对着更少的文件跑。所以每个模块路径都要求 200 **且**字节数与磁盘一致。
+# 这一轮起名单里还包括 PWA 那几字节与两张真被引用的位图：漏发一张图在本地 root 形态下
+# 看不见（那台 server.cjs 发的是整棵仓库），只有按字节比对才抓得到"线上少发了什么"。
 PREFLIGHT_RELS="index.html css/game.css js/main.js js/store.js js/gen-worker.js js/theme.js \
 js/ui/game.js js/render/board.js js/engine/rng.js js/engine/grid.js js/engine/counter.js \
-js/engine/solver.js js/engine/generate.js"
+js/engine/solver.js js/engine/generate.js js/pwa.js sw.js manifest.json \
+icons/icon-192.png textures/paper-256.png"
 preflight() {
   local base=$1 rel want got f served
   served=$(curl -fsS -m 8 "$base" 2>/dev/null) || { echo "  首页取不到：$base" >&2; return 1; }

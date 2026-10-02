@@ -4,15 +4,36 @@
 <meta charset="utf-8">
 <!-- 不写 <base>，也没有一个以 / 开头的资源路径：Pages 把站点发在 /<repo>/ 前缀下，
      硬编 "/" 会在这一形把 css 与引擎全部 404 掉（本组织的浏览器闸因此跑两趟 URL 形态）。 -->
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- 浏览器**无论有没有声明**都会去 origin 根探测 /favicon.ico：不列它，就是每条腿的 console 尾巴上
-     多一条 404（本机 2026-09-29 实测：Chrome 154 自己发的请求，不走元素 error 事件）。
-     门禁那条「无资源 404」判的是 link/script/img 的 error 事件，favicon 探测根本不走这条路 ——
-     也就是说那条断言没有为此放宽，只是读数里噪声一条。声明一个空的 data: 图标就不发这个请求。 -->
-<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- viewport-fit=cover 不是装饰：不加它，iOS 上 css/game.css 里那几条 env(safe-area-inset-*)
+     恒为 0，"适配了刘海"就只是一句注释。 -->
+<meta name="description" content="のりのり（Norinori）纯逻辑解法器：每块粗线区域恰好两颗黑格，黑格两两成 1×2／2×1 骨牌，两块骨牌不得共边。出货的每一盘都由穷举计数器数到恰好一个解，再由五条局部规则零猜测推到底。">
+<meta name="theme-color" content="#14161a">
+<meta name="color-scheme" content="dark">
 <title>乗りのり · Norinori</title>
+<!-- 图标换成盘上真实存在的 PNG（由 assets/gen/make_art.py 生成）。原先那枚 href="data:," 的
+     空图标只是为了压掉 Chrome 自己探测 /favicon.ico 的那条 404；现在本仓**有**图标了，
+     那条探测也就有了答案，这个技巧连同它的注释一起退休。 -->
+<link rel="icon" type="image/png" sizes="48x48" href="icons/favicon-48.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+<!-- apple-touch-icon 只留一枚：iOS 不看 sizes，多枚会各拿一张，"哪枚是主屏图标"就成了 UA 的心情。 -->
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="乗りのり">
+<link rel="manifest" href="manifest.json">
+<meta property="og:type" content="website">
+<meta property="og:title" content="乗りのり · Norinori">
+<meta property="og:description" content="每块粗线区域恰好两颗黑格；骨牌可跨区域、不得共边。每一盘都数到恰好一个解。">
+<meta property="og:image" content="icons/og-1200x630.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="icons/og-1200x630.png">
 <link rel="stylesheet" href="css/game.css">
 <script type="module" src="js/main.js"></script>
+<script src="js/pwa.js" defer></script>
 </head>
 <body>
 <header>
@@ -48,6 +69,14 @@
       <button id="check" type="button">检查</button>
       <button id="clear" type="button">清空</button>
     </div>
+    <!-- 三个 HUD 开关住在这里，id 与 js/main.js 的 dom 表一一对应：
+         requestFullscreen 绑的就是 #fullscreen，写成一个盘上不存在的 id 等于"全屏做了"是假的。 -->
+    <div class="row hud" role="group" aria-label="状态开关">
+      <button id="pause" type="button" aria-pressed="false">暂停</button>
+      <button id="mute" type="button" aria-pressed="false">静音</button>
+      <button id="fullscreen" type="button">全屏</button>
+    </div>
+    <p class="read clock" id="clock"></p>
     <p class="read" id="status">开局之前没有读数。</p>
     <p class="read" id="progress"></p>
     <p class="read seedline">种子 <span id="seed"></span>｜第 <span id="attempt-n">0</span> 次尝试</p>
@@ -56,7 +85,9 @@
     <details class="help">
       <summary>键盘</summary>
       <p>1 黑格笔、2 白点笔、U 撤销、H 提示、N 换一局、E 清空当前笔所在格的落子。
-         方向键移动焦点格，空格/回车在焦点格落子。</p>
+         方向键移动焦点格，空格/回车在焦点格落子。<br>
+         P 暂停／继续、M 静音、F 全屏：暂停期间计时与落子动效都不推进（累加器归零、
+         音频挂起），恢复后局面一个子都不少。</p>
     </details>
   </section>
 </main>
