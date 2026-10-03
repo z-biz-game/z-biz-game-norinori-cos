@@ -16,7 +16,9 @@
     "start": "node server.cjs",
     "prefix": "PREFIX=/z-biz-game-norinori-cos PORT=5280 node server.cjs",
     "verify": "bash tools/verify.sh",
-    "verify:root": "SHAPES=root bash tools/verify.sh"
+    "verify:root": "SHAPES=root bash tools/verify.sh",
+    "deploy-set": "node tools/deploy-set.mjs",
+    "deploy-set:selftest": "node tools/deploy-set-selftest.mjs"
   },
   "keywords": ["puzzle", "norinori", "nikoli", "logic", "deduction"],
   "license": "MIT"
