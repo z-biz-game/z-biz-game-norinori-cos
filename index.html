@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <!-- 不写 <base>，也没有一个以 / 开头的资源路径：Pages 把站点发在 /<repo>/ 前缀下，
      硬编 "/" 会在这一形把 css 与引擎全部 404 掉（本组织的浏览器闸因此跑两趟 URL 形态）。 -->
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- 浏览器**无论有没有声明**都会去 origin 根探测 /favicon.ico：不列它，就是每条腿的 console 尾巴上
      多一条 404（本机 2026-09-29 实测：Chrome 154 自己发的请求，不走元素 error 事件）。
      门禁那条「无资源 404」判的是 link/script/img 的 error 事件，favicon 探测根本不走这条路 ——
@@ -13,6 +13,11 @@
 <title>乗りのり · Norinori</title>
 <link rel="stylesheet" href="css/game.css">
 <script type="module" src="js/main.js"></script>
+
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
 </head>
 <body>
 <header>
@@ -66,5 +71,6 @@
     再由五条局部规则零猜测推到底。出题跑在 <code>js/gen-worker.js</code> 这个 module worker 里——
     硬骨档一次 attempt 的实测尾巴是 0.6～2.3 秒，主线程同步等就是把界面钉死。</p>
 </footer>
+  <script src="js/sw-register.js"></script>
 </body>
 </html>
