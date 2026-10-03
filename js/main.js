@@ -74,7 +74,33 @@ let reqSeq = 0;
 
 const regStr = (reg = game.reg) => Array.from(reg).join(',');
 const seedText = () => `0x${(S.seed >>> 0).toString(16)}`;
-const elapsedMs = () => Math.round(S.baseElapsedMs + (performance.now() - S.startedAt));
+const elapsedMs = () => Math.round(S.baseElapsedMs + (S.startedAt ? performance.now() - S.startedAt : 0));
+
+// ── 暂停 ────────────────────────────────────────────────────────────────
+// 暂停是**真冻结时钟**，不是挂个标签：暂停那一瞬把还在跑的那一段折进 S.baseElapsedMs，
+// 再把 S.startedAt 清零 —— elapsedMs() 于是恒等于 baseElapsedMs，一毫秒都不再涨。
+// 恢复时重新盖上 S.startedAt，时钟从冻结处续走；因为 baseElapsedMs 已经是累计值，
+// 恢复后第一帧的 dt 就是一个正常帧间隔，不会把暂停那几秒一次性吃掉（不跳步）。
+let paused = false;
+function setPaused(next) {
+  next = !!next;
+  if (paused === next) return paused;
+  if (next) {
+    S.baseElapsedMs += performance.now() - S.startedAt;
+    S.startedAt = 0;
+  } else {
+    S.startedAt = performance.now();
+  }
+  paused = next;
+  paintPause();
+  return paused;
+}
+function paintPause() {
+  const btn = document.getElementById('btn-pause');
+  if (!btn) return;
+  btn.textContent = paused ? '继续' : '暂停';
+  btn.setAttribute('aria-pressed', paused ? 'true' : 'false');
+}
 
 function urlState() {
   const q = new URLSearchParams(location.search);
@@ -141,6 +167,8 @@ function newGame(tierKey = S.tierKey, seed = S.seed, advance = false) {
   S.metrics = null;
   S.baseElapsedMs = 0;
   S.startedAt = performance.now();
+  // 换一局＝新的一局，新局一定在走：带着上一局的 paused=true 进来会让时钟和按钮各说各话
+  if (paused) { paused = false; paintPause(); }
   S.selected = null;
   S.hintCells = [];
   S.wrong = [];
@@ -435,6 +463,8 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'u') doUndo();
   else if (k === 'h') doHint();
   else if (k === 'n') newGame(S.tierKey, S.seed, true);
+  // 空格已被画布 keydown 占用（e.key === ' ' 落笔），同键两义会一按两响，暂停只挂 P
+  else if (k === 'p') setPaused(!paused);
   else return;
   e.preventDefault();
 });
@@ -449,6 +479,12 @@ dom.tier.value = S.tierKey;
 dom.tier.addEventListener('change', () => newGame(dom.tier.value, S.seed, false));
 dom.penBlack.addEventListener('click', () => setPen(BLACK));
 dom.penWhite.addEventListener('click', () => setPen(WHITE));
+// ---- 暂停按钮（#btn-pause，与 P 同一个入口）----
+(function bindPause() {
+  const btn = document.getElementById('btn-pause');
+  if (!btn) return;   // HUD 里没这个 id 就不装，别让量具算出"已实现"的假绿
+  btn.addEventListener('click', () => setPaused(!paused));
+})();
 dom.newGame.addEventListener('click', () => newGame(S.tierKey, S.seed, true));
 dom.winNext.addEventListener('click', () => newGame(S.tierKey, S.seed, true));
 dom.hint.addEventListener('click', doHint);
@@ -563,6 +599,10 @@ const facade = {
   },
 };
 window.norinori = facade;
+Object.defineProperty(facade, 'paused', { get: () => paused });
+facade.setPaused = setPaused;
+/** 正在推进的那个数（毫秒）。暂停时它必须一毫秒不动 —— 这就是"真冻结"的判据。 */
+facade.simClock = () => elapsedMs();
 
 // ── 开机 ──────────────────────────────────────────────────────────────
 applyThemeVars();
@@ -604,7 +644,11 @@ setPen(BLACK);
     || document.msFullscreenElement || null;
 
   // 不支持也要给个说法：只把按钮灰掉而不解释，玩家会以为这功能没做完。
+  // supported 这枚标记不能省：下面 sync() 每次都会重写 title，不挡住的话，装的时候刚写
+  // 进去的人话原因会被随后的 sync() 立刻抹成"全屏 (F)"——禁用就变成一句没有理由的禁用。
+  let supported = !!req;
   const unsupported = () => {
+    supported = false;
     btn.disabled = true;
     btn.title = '这个浏览器不提供元素全屏（iOS Safari 请用「添加到主屏幕」独立打开）';
   };
@@ -635,7 +679,7 @@ setPen(BLACK);
     const on = !!current();
     btn.setAttribute('aria-pressed', String(on));
     btn.textContent = on ? "退出全屏" : "全屏";
-    btn.title = "全屏" + '（F）';
+    if (supported) btn.title = "全屏" + '（F）';
     const body = document.body;
     if (body && body.classList) body.classList.toggle('fullscreen', on);
   }
