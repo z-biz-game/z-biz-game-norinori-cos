@@ -145,3 +145,35 @@ a[href],
   min-height: 44px !important;
   min-width: 44px !important;
 }
+
+/* 减弱动效（prefers-reduced-motion）—— 真分支，不是空壳
+ *
+ * 本仓的装饰性动效**真在 CSS 上**：button/select 的
+ * transition: border-color …, color …（悬停时边框与字色渐变过去，约 120ms 一段）。
+ * canvas 侧 js/render/board.js 全仓 Math.sin / performance.now() % / requestAnimationFrame
+ * 命中数为 0，逐帧完全静止，所以 CSS 媒体查询就是这里正确的工具，不必往 js 里塞
+ * matchMedia（往 js 里加等于给一个不存在的 canvas 动效造开关）。
+ *
+ * 判据：这段渐变只改边框色与字色，两者的**终值**（:hover 时的 --accent 边框、--ink 字色）
+ * 一概不动 —— 悬停反馈还在，只是"渐过去"变成"立刻变"。换句话说：动效去掉，信息一条不少。
+ *
+ * 注：上面那条声明里的 var(--motion-ms) 在本仓 :root 里并没有定义（:root 只有 safe-area
+ * 四个变量与 --touch-min），按 CSS 规范整条 transition 声明是 invalid 的、浏览器会丢掉。
+ * 也就是说这个渐变在今天的 norinori 上其实压根没跑起来。变量缺失是另一笔账，不在本单
+ * 范围，这里只如实记一句；本段的规则写成 transition: none 这样的关键字，不依赖那个变量，
+ * 无论将来补不补都成立。 */
+@media (prefers-reduced-motion: reduce) {
+  /* 悬停不再渐变：边框色与字色立刻切到终值，:hover 规则本身保留 */
+  button,
+  select {
+    transition: none;
+  }
+
+  /* 兜底：仓内任何将来新增的装饰性动画/过渡都归零（不改 scroll-behavior 之外的布局量） */
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
