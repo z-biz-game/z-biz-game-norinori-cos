@@ -83,7 +83,7 @@ js/          main.js（页面装配 + window.norinori 那张闸用的脸）store
 js/ui/       game.js（局面：落子/撤销/判定，判定交回引擎）
 js/render/   board.js（一块画布、一份几何：draw 算出的 geo 就是 hitCell/centerOf/pixelAt 用的那一份）
 css/game.css index.html     server.cjs（本地静态服务，root 与 Pages 前缀两种形态都由它服务）
-tools/       check.mjs（总门）rule-test counter-test solver-test generate-test / tools/assemble-site / tools/deploy-set / tools/deploy-set-selftest
+tools/       check.mjs（总门）rule-test counter-test solver-test generate-test
              fixtures.js（夹具）generator-probe.mjs（观测）balance.mjs（难度实测）
              verify.sh（浏览器闸）playtest.cjs（裸 CDP 驱动）scenarios.js（页内场景）
 tests/       r1-equiv.test.mjs counter-agree.test.mjs shipping.test.mjs     ← 三张证人

@@ -103,7 +103,7 @@ if [ "$CUSTOM" = 0 ]; then
   echo "  两种形态各用一个 HTTP 端口：origin 不同 ⇒ localStorage 各一套；Chrome/profile 按形态各一份，该形态的腿共用"
 else
   CDP=${CDP_PORT:-$CDP_WANT}
-  echo "BASE_URL given → 只跑部署件这一种形态，本脚本不起任何服务（CDP $CDP）"
+  echo "BASE_URL given → 只跑部署件这一种形态，本脚本不起任何服务（CDP ${CDP}）"
 fi
 echo "logs: $LOGDIR"
 [ "$SABOTAGE" = 1 ] && echo "SABOTAGE=1 → 只把 boot 腿证人里的尝试次数改错一位：这一跑**必须**在那一条上红，绿了就是闸没咬住"
@@ -165,7 +165,7 @@ preflight() {
   local base=$1 rel want got f served
   served=$(curl -fsS -m 8 "$base" 2>/dev/null) || { echo "  首页取不到：$base" >&2; return 1; }
   case "$served" in *js/main.js*) ;; *) echo "  $base 上发的不是本仓的首页（正文里找不到 js/main.js）" >&2; return 1 ;; esac
-  case "$served" in *"$FEATURE"*) ;; *) echo "  $base 在发别的应用：首页正文里找不到「$FEATURE」" >&2; return 1 ;; esac
+  case "$served" in *"$FEATURE"*) ;; *) echo "  $base 在发别的应用：首页正文里找不到「${FEATURE}」" >&2; return 1 ;; esac
   for rel in $PREFLIGHT_RELS; do
     want=$(wc -c < "$HERE/$rel" | tr -d ' ')
     [ -n "$want" ] || { echo "  $rel 在磁盘上读不到，闸没有可对的基准" >&2; return 1; }
@@ -173,11 +173,11 @@ preflight() {
     got=$(curl -sS -m 8 -o "$f" -w '%{http_code} %{size_download}' "$base$rel" 2>/dev/null) || {
       echo "  $rel 取不回来：$base$rel" >&2; return 1; }
     case "$got" in "200 $want") ;; *)
-      echo "  $rel 不对味：$base$rel 回 $got，磁盘上的这份是 200 $want 字节" >&2
+      echo "  $rel 不对味：$base$rel 回 ${got}，磁盘上的这份是 200 $want 字节" >&2
       echo "  前两行到手内容：$(head -c 160 "$f" | tr '\n' ' ')" >&2
       return 1 ;; esac
   done
-  echo "  预检：首页含「$FEATURE」与 js/main.js · $(echo $PREFLIGHT_RELS | wc -w | tr -d ' ') 条真实模块路径按字节对上磁盘"
+  echo "  预检：首页含「${FEATURE}」与 js/main.js · $(echo $PREFLIGHT_RELS | wc -w | tr -d ' ') 条真实模块路径按字节对上磁盘"
   return 0
 }
 
@@ -236,24 +236,24 @@ run_leg() {
       nav="$base"
       expect=$(node tools/playtest.cjs witness "$DEFAULT_TIER" "$DEFAULT_SEED" \
         | python3 -c 'import sys,json;d=json.load(sys.stdin);d["via"]="default";print(json.dumps(d))') \
-        || { echo "  node 证人起不来（$DEFAULT_TIER/$DEFAULT_SEED）" >&2; RUNBAD=1; return; }
+        || { echo "  node 证人起不来（$DEFAULT_TIER/${DEFAULT_SEED}）" >&2; RUNBAD=1; return; }
       ;;
     boot-url)
       s=boot
       nav="${base}?tier=${URL_TIER}&seed=${URL_SEED}"
       expect=$(node tools/playtest.cjs witness "$URL_TIER" "$URL_SEED") \
-        || { echo "  node 证人起不来（$URL_TIER/$URL_SEED）" >&2; RUNBAD=1; return; }
+        || { echo "  node 证人起不来（$URL_TIER/${URL_SEED}）" >&2; RUNBAD=1; return; }
       ;;
     render)
       nav="${base}?tier=${PLAY_TIER}&seed=${PLAY_SEED}"
       expect=$(node tools/playtest.cjs witness "$PLAY_TIER" "$PLAY_SEED") \
-        || { echo "  node 证人起不来（$PLAY_TIER/$PLAY_SEED）" >&2; RUNBAD=1; return; }
+        || { echo "  node 证人起不来（$PLAY_TIER/${PLAY_SEED}）" >&2; RUNBAD=1; return; }
       ;;
     pointer|keyboard|resume)
       mode=interact
       nav="${base}?tier=${PLAY_TIER}&seed=${PLAY_SEED}"
       expect=$(node tools/playtest.cjs witness "$PLAY_TIER" "$PLAY_SEED") \
-        || { echo "  node 证人起不来（$PLAY_TIER/$PLAY_SEED）" >&2; RUNBAD=1; return; }
+        || { echo "  node 证人起不来（$PLAY_TIER/${PLAY_SEED}）" >&2; RUNBAD=1; return; }
       ;;
     resumefrag)
       # 阴性自证：同文档只换 #fragment 的那一跳**不是**导航，所以"换了文档/走了存档路径"两条证人
@@ -262,12 +262,12 @@ run_leg() {
       want_fail=2
       nav="${base}?tier=${PLAY_TIER}&seed=${PLAY_SEED}"
       expect=$(node tools/playtest.cjs witness "$PLAY_TIER" "$PLAY_SEED") \
-        || { echo "  node 证人起不来（$PLAY_TIER/$PLAY_SEED）" >&2; RUNBAD=1; return; }
+        || { echo "  node 证人起不来（$PLAY_TIER/${PLAY_SEED}）" >&2; RUNBAD=1; return; }
       ;;
     sizes|store)
       nav="${base}?tier=${PLAY_TIER}&seed=${PLAY_SEED}"
       expect=$(node tools/playtest.cjs witness "$PLAY_TIER" "$PLAY_SEED") \
-        || { echo "  node 证人起不来（$PLAY_TIER/$PLAY_SEED）" >&2; RUNBAD=1; return; }
+        || { echo "  node 证人起不来（$PLAY_TIER/${PLAY_SEED}）" >&2; RUNBAD=1; return; }
       ;;
     reproof)
       nav="${base}?tier=${PLAY_TIER}&seed=${PLAY_SEED}"
