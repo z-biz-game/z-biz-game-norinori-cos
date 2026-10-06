@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <!-- 不写 <base>，也没有一个以 / 开头的资源路径：Pages 把站点发在 /<repo>/ 前缀下，
      硬编 "/" 会在这一形把 css 与引擎全部 404 掉（本组织的浏览器闸因此跑两趟 URL 形态）。 -->
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="twitter:card" content="summary">
 <!-- 浏览器**无论有没有声明**都会去 origin 根探测 /favicon.ico：不列它，就是每条腿的 console 尾巴上
      多一条 404（本机 2026-09-29 实测：Chrome 154 自己发的请求，不走元素 error 事件）。
      门禁那条「无资源 404」判的是 link/script/img 的 error 事件，favicon 探测根本不走这条路 ——
      也就是说那条断言没有为此放宽，只是读数里噪声一条。声明一个空的 data: 图标就不发这个请求。 -->
 <link rel="icon" href="data:,">
 <title>乗りのり · Norinori</title>
-<meta name="description" content="乗りのり（Norinori）二格区域涂黑谜题：题面已用粗线切好区域，在其中涂黑部分格子，使每块区域恰好两颗黑格，且黑格两两成对组成 1×2／2×1 骨牌；骨牌可以跨过区域边界，但两块骨牌不许共边。">
+<meta name="description" content="乗りのり（Norinori）二格区域涂黑谜题：题面已用粗线切好区域，在其中涂黑部分格子，使每块区域恰好两颗黑格，且黑格两两成对组成 1×2／2×1 骨牌；骨牌可以跨过区域边界，但两块骨牌不许共边。"><meta property="og:title" content="乗りのり · Norinori"><meta property="og:description" content="乗りのり（Norinori）二格区域涂黑谜题：题面已用粗线切好区域，在其中涂黑部分格子，使每块区域恰好两颗黑格，且黑格两两成对组成 1×2／2×1 骨牌；骨牌可以跨过区域边界，但两块骨牌不许共边。"><meta property="og:image" content="https://z-biz-game.github.io/z-biz-game-norinori-cos/icons/icon-512.png"><meta name="twitter:image" content="https://z-biz-game.github.io/z-biz-game-norinori-cos/icons/icon-512.png">
 <link rel="stylesheet" href="css/game.css">
 <script type="module" src="js/main.js"></script>
 
