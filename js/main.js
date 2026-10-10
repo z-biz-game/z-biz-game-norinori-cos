@@ -547,22 +547,6 @@ function eraseSelected() {
 // ── 暂停 / 静音 / 全屏：三枚开关都动真状态，不是只改一行字 ────────────
 // 暂停这一支改两处：**计时**（把已走过的这段收进底数，之后读数不再叠当前那半段）与
 // **仿真**（feel.pause() 之后一个步都不走，恢复也不补跑）。只灰掉按钮不算暂停。
-function setPaused(on) {
-  const next = !!on;
-  if (next === S.paused) {
-    syncHud();
-    return next;
-  }
-  const now = performance.now();
-  if (next) S.baseElapsedMs += now - S.startedAt;
-  else S.startedAt = now; // 重新对齐：盯着暂停面板的那段时间不许进计时
-  S.paused = next;
-  if (next) feel.pause();
-  else feel.resume();
-  setMsg(next ? '已暂停：计时与涟漪都停在这一刻' : '继续这一局');
-  render();
-  return next;
-}
 
 function applyMute(on) {
   const next = setMuted(on);
