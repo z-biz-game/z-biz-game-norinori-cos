@@ -1,46 +1,56 @@
 'use strict';
-// 离线壳：network-first，**绝不 cache-first**。
+// 离线可用 + 永不被旧缓存钉住。
 //
-// 为什么这条是死的：本仓没有构建步骤，js/ 下十几个 ES 模块与 css 就是线上跑的字节。
-// cache-first 配一个手工 VERSION 号，等于"改了代码忘了 bump 就把旧版永久钉死"——
-// 出新 HTML 配旧 JS 的鬼状态在同组织已经红过一次（页面看着是新的，判定是上个月的）。
-// network-first 的代价是每次要多一个往返，收益是：**没有**这种鬼状态。
-//
-// 版本号仍然留着（CACHE 名带 v），但它只用于"整套换血时把上一代缓存清掉"，
-// 不是"这一版内容就这样了"的承诺：内容以网络为准。
-//
-// 只接管同源 GET：跨源的东西（没有，但将来会有）一律放行不管，
-// 把别人的响应塞进自己的缓存等于替别人做可用性决定。
-const VERSION = 'norinori-v1';
-const FALLBACK = './';
+// 两条实测换来的口径：
+//   1) 一律 **网络优先**，命中网络才回填缓存。手工 VERSION + cache-first 的组合，
+//      发出去的 HTML 会配上上一版的 js/css，出一个"新界面配旧逻辑"的鬼状态，
+//      而且玩家自己无法恢复（只能等缓存过期）。
+//   2) 缓存名带版本号（activate 时清掉非本版的名字）。改版**不需要**同步 bump：
+//      同名文件重绘之后，网络优先这一条保证客户端下一次联网就拿到新字节。
+const VERSION = 'norinori-cos-v1';
+const CACHE = `${VERSION}-shell`;
+const PRECACHE = ['index.html', 'manifest.webmanifest'];
 
-self.addEventListener('install', () => self.skipWaiting());
-
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
+self.addEventListener('install', (ev) => {
+  // 首屏两件套先抓下来：断网时至少能打开界面，而不是浏览器的错误页。
+  ev.waitUntil(
+    caches.open(CACHE).then((c) => c.addAll(PRECACHE).catch(() => {})).then(() => self.skipWaiting())
   );
 });
 
-const sameOriginGet = (req) => req.method === 'GET' && new URL(req.url).origin === self.location.origin;
+self.addEventListener('activate', (ev) => {
+  ev.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => !k.startsWith(VERSION)).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
 
-self.addEventListener('fetch', (e) => {
-  const req = e.request;
-  if (!sameOriginGet(req)) return;
-  const isNav = req.mode === 'navigate';
-  e.respondWith(
-    fetch(req, { cache: 'no-store' })
+self.addEventListener('fetch', (ev) => {
+  const req = ev.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+
+  ev.respondWith(
+    fetch(req)
       .then((res) => {
-        // 命中网络就顺手回填：只存 200，把 404/500 存下来等于把一次故障变成离线期的默认答案。
-        if (res.ok && res.type === 'basic') {
+        if (res && res.ok) {
           const copy = res.clone();
-          caches.open(VERSION).then((c) => c.put(req, copy));
+          caches.open(CACHE).then((c) => c.put(req, copy));
         }
         return res;
       })
-      .catch(() => caches.match(req, { ignoreSearch: !isNav })
-        .then((hit) => hit || (isNav ? caches.match(FALLBACK) : Response.error()))),
+      .catch(async () => {
+        const hit = await caches.match(req);
+        if (hit) return hit;
+        // 导航请求（地址栏/刷新/桌面图标）离线时回落到缓存的那份壳，不白屏。
+        if (req.mode === 'navigate') {
+          const shell = await caches.match('index.html');
+          if (shell) return shell;
+        }
+        return Response.error();
+      })
   );
 });

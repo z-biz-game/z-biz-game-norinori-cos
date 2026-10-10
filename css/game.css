@@ -139,16 +139,85 @@ footer {
 }
 footer code { color: var(--accent); }
 
-/* prefers-reduced-motion：这一条不是"少动一点"，是"把动效这一层整个关掉"。
-   --motion-ms 由 js/theme.js 推到 :root，所以这里必须覆盖变量本身；
-   canvas 那一侧的粒子/涟漪/脉冲由 js/main.js 读同一个媒体查询后真跳过（见 REDUCED_MOTION），
-   两边各关一半就是"设置了还是晕"。纸纹留着：它是材质，不是动效。 */
-@media (prefers-reduced-motion: reduce) {
-  button, select { transition: none; }
-  #win-veil { animation: none !important; transition: none !important; }
-  :root { --motion-ms: 0ms; }
+/* 中央分发：safe-area 兜底 */
+
+/* ---------- safe-area：刘海与主屏条不吃掉按钮（中央分发，akari-cos 同口径） ---------- */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+}
+html, body {
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+}
+body {
+  padding-top: var(--sat);
+  padding-bottom: var(--sab);
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+/* 贴边的固定/吸底元素自己让开主屏条，别让 home indicator 压住按钮 */
+.fixed-bottom, .bottom-bar, .hud-bottom, footer.app-footer {
+  padding-bottom: calc(var(--sab) + env(safe-area-inset-bottom, 0px));
 }
 
-/* 胜利卡片淡入：时长跟着 --motion-ms 走，所以上面那条 reduce 分支一关就成"瞬时出现"。
-   没有基线动画的 reduce 分支等于在关掉一个不存在的东西。 */
-@keyframes veil-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ============================================================
+   44px 触摸命中下限（Apple HIG 手机可用性底线）
+   每个真正可点的元素都要有 ≥44×44 CSS px 的命中盒。
+   min-height / min-width 是**硬下限**：只会把过小的盒子撑到 44px，
+   本来就够大的控件（宽药丸、整行列表项、大数字键）外形一点不变。
+
+   两处非平凡之处：
+   1) 需要 !important —— 各组件自己有 `.shelf button { min-width: 34px }`
+      这类更"贴身"的规则，类选择器的优先级高于任何标签堆叠，
+      不加的话这条底线会被组件规则逐个抵消。
+   2) 先把 --touch-min 定死：tapa / nurikabe 早就写了
+      `min-height: var(--touch-min)`，但全仓没有任何地方定义过这个变量，
+      无 fallback 的 var() 在计算值阶段整条作废 —— 那是个看着像 44px、
+      实际什么都不保证的死规则。这里补上定义，让它们原本的意图真正成立。
+   ============================================================ */
+:root { --touch-min: 44px; }
+button,
+select,
+input,
+textarea,
+a[href],
+[role="button"] {
+  min-height: 44px !important;
+  min-width: 44px !important;
+}
+
+/* 减弱动效（prefers-reduced-motion）—— 真分支，不是空壳
+ *
+ * 本仓的装饰性动效**真在 CSS 上**：button/select 的
+ * transition: border-color …, color …（悬停时边框与字色渐变过去，约 120ms 一段）。
+ * canvas 侧 js/render/board.js 全仓 Math.sin / performance.now() % / requestAnimationFrame
+ * 命中数为 0，逐帧完全静止，所以 CSS 媒体查询就是这里正确的工具，不必往 js 里塞
+ * matchMedia（往 js 里加等于给一个不存在的 canvas 动效造开关）。
+ *
+ * 判据：这段渐变只改边框色与字色，两者的**终值**（:hover 时的 --accent 边框、--ink 字色）
+ * 一概不动 —— 悬停反馈还在，只是"渐过去"变成"立刻变"。换句话说：动效去掉，信息一条不少。
+ *
+ * 注：上面那条声明里的 var(--motion-ms) 在本仓 :root 里并没有定义（:root 只有 safe-area
+ * 四个变量与 --touch-min），按 CSS 规范整条 transition 声明是 invalid 的、浏览器会丢掉。
+ * 也就是说这个渐变在今天的 norinori 上其实压根没跑起来。变量缺失是另一笔账，不在本单
+ * 范围，这里只如实记一句；本段的规则写成 transition: none 这样的关键字，不依赖那个变量，
+ * 无论将来补不补都成立。 */
+@media (prefers-reduced-motion: reduce) {
+  /* 悬停不再渐变：边框色与字色立刻切到终值，:hover 规则本身保留 */
+  button,
+  select {
+    transition: none;
+  }
+
+  /* 兜底：仓内任何将来新增的装饰性动画/过渡都归零（不改 scroll-behavior 之外的布局量） */
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

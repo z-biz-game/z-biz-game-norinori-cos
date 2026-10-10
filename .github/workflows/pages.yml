@@ -19,22 +19,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # 没有构建步骤：仓库里跑的就是线上跑的（纯 ESM，零依赖，无打包器），所以站点是一次文件拷贝。
-      # 名单是"首页与 css 真实引用到的每一字节"，逐条对过：index.html 引 css/game.css、js/main.js、
-      # js/pwa.js、manifest.json、icons/*.png；css/game.css 引 ../textures/washi-512.png；
-      # js/ 里没有任何动态 import，出题用的 js/gen-worker.js 与画布纸纹 textures/paper-256.png
-      # 分别住在 js/ 与 textures/ 里、都在名单内。
-      # 少列一样就是线上 404：图标裂图比没图标更坏（安装面板与分享卡各拿一张裂的），
-      # sw.js 缺了就是"能打开、永远装不上"，而且这两样在本地 root 形态下都发现不了——
-      # 本地那台 server.cjs 发的是整棵仓库。
-      # 用 `path: .` 会把 server.cjs、tools/（里面躺着 tools/fixtures.js = 每张夹具盘的手推答案与
-      # 出货对照的样本串）、tests/、assets/gen/（出图脚本，不是运行字节）和 *.md 一起传上去
-      # —— ci.yml 里那几条"必须 404"拦的就是这个。
+      # 拷哪些不写在这里——写在 tools/assemble-site.sh，本地闸与 CI 调同一支脚本。
+      # 以前这里是手抄的三行 cp（index.html/css/js），于是页面后来引用的
+      # manifest.webmanifest、sw.js、icons/* 全都上不了线：线上 404，而 CI 一路绿，
+      # 因为没有任何一步加载过那份产物。服务器、台架、文档、node_modules 仍在 artifact 外面。
       - name: Assemble static site
-        run: |
-          mkdir _site
-          cp index.html manifest.json sw.js _site/
-          cp -r css js icons textures _site/
+        run: bash tools/assemble-site.sh _site
+      - name: Deploy set gate (checks the very _site about to be uploaded)
+        run: node tools/deploy-set.mjs _site
       # configure-pages@v5：本仓此前没有 Pages 站点，这一步会顺手建一个。
       # deploy-pages@v4 + upload-pages-artifact@v3 是配套的——早先用 deploy-pages@v3 时
       # 出现过"CI 绿、站点 404"（取不到 artifact），同组织其他仓踩过。
