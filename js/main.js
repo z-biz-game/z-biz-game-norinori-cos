@@ -18,6 +18,24 @@ import { TIERS, tierByKey, generate } from './engine/generate.js';
 import { derive } from './engine/rng.js';
 import { countByRegion } from './engine/counter.js';
 import * as store from './store.js';
+// 听觉这一路反馈：视觉与数值之外，桌面上还该有"听得见"的一路。
+// 音频模块自己管手势解锁与真静音（suspend），这里只管把音接到引擎的判定上。
+import { audio } from './audio.js';
+
+/**
+ * 触觉：仓里已经有一份垫片（js/haptics.js，用 <script> 引入，暴露 window.haptic）。
+ * 这里**不另造一套**：只在引擎判定的分支上叫它一声，让"被拒"与"通关"有各自的档。
+ *
+ * ⚠️ 触觉是补路，不是主路：navigator.vibrate 在 iOS Safari 上不存在，
+ *    桌面 Chrome 也需用户激活且体感弱 ⇒ 不能拿它顶替听觉。
+ */
+function haptic(kind) {
+  try {
+    if (typeof window !== 'undefined' && typeof window.haptic === 'function') window.haptic(kind);
+  } catch (_) {
+    /* 没有这一路就算了：它本来就是补路 */
+  }
+}
 
 const DEFAULT_SEED = 20260929; // 不是按日期算的：换一局走 derive(seed,'next')，链子决定论、能复现
 const DEFAULT_TIER = 'easy';
@@ -313,9 +331,17 @@ function showVeil(st, regionCount) {
 }
 
 // ── 交互 ──────────────────────────────────────────────────────────────
+// 声音接在**引擎的判定分支**上：Game.put 回 true = 引擎真落了那一笔，
+// 回 false = 这一笔不成立（已经涂成这个色 / 盘外）。
 function putAt(i) {
   if (S.generating || i == null || !game.n) return;
-  if (!game.put(i, S.pen)) return;
+  if (!game.put(i, S.pen)) {
+    audio.play('blocked');       // 引擎不收这一笔
+    haptic('err');
+    return;
+  }
+  audio.play('correct');         // 引擎真落了这一笔
+  haptic('tap');
   afterMove(`第 ${i} 格`);
 }
 
@@ -327,6 +353,11 @@ function afterMove(what) {
   if (st.solved) store.addTotals({ solved: 1 });
   S.totals = store.load().totals;
   setMsg(st.solved ? '推完了' : what);
+  if (st.solved) {
+    // 通关只响一次：引擎的 status().solved 说这一局成了才响。
+    audio.play('win');
+    haptic('win');
+  }
   persist();
   render();
 }
@@ -344,8 +375,12 @@ function doHint() {
   const one = game.hint();
   if (one.conflict) {
     setMsg(`提示说：这一局已经矛盾了（第 ${one.conflict.cell} 格）`);
+    audio.play('wrong');        // 引擎说盘自己打脸了
+    haptic('err');
   } else if (!one.fact) {
     setMsg('提示说：这一步五条局部规则都推不出必然结论——该换个角度了');
+    audio.play('wrong');        // 引擎说推不动了
+    haptic('err');
   } else {
     const f = one.fact;
     S.hintCells = [f.cell];
@@ -353,6 +388,8 @@ function doHint() {
     store.addTotals({ hints: 1 });
     S.totals = store.load().totals;
     setMsg(`${f.rule}：${RULES[f.rule]}（第 ${f.cell} 格${f.value === BLACK ? '涂黑' : '点白'}）`);
+    audio.play('move');         // 提示：只说哪一格，不代涂
+    haptic('tap');
     persist();
   }
   render();
@@ -365,6 +402,8 @@ function doCheck() {
   if (st.conflict) {
     S.wrong = [st.conflict.cell];
     setMsg(`矛盾在第 ${st.conflict.cell} 格：${st.conflict.why}`);
+    audio.play('wrong');        // 引擎说盘自己打脸了
+    haptic('err');
   } else if (st.violation) {
     if (st.violation.rule === 'R1') {
       S.wrong = st.violation.cells;
@@ -373,12 +412,18 @@ function doCheck() {
       S.wrong = [];
       setMsg(`区域数不对：${st.violation.regions.length} 块区域的黑格数不是 2（区域 ${st.violation.regions.join('、')}）`);
     }
+    audio.play('wrong');        // 引擎说有一条规则不成立
+    haptic('err');
   } else if (!st.filled) {
     S.wrong = [];
     setMsg(`还没落满：未定 ${st.counts.unknown} 格，落下的那些都合法`);
+    audio.play('wrong');        // 引擎说还没落满
+    haptic('err');
   } else {
     S.wrong = [];
     setMsg('两条规则都过了');
+    audio.play('correct');      // 引擎说两条规则都过了
+    haptic('tap');
   }
   render();
 }
@@ -387,11 +432,15 @@ function doUndo() {
   const last = game.undo();
   if (!last) {
     setMsg('没有可撤的落子');
+    audio.play('wrong');        // 引擎说没有可撤的
+    haptic('err');
   } else {
     S.selected = last.i;
     S.hintCells = [];
     S.wrong = [];
     setMsg(`撤销第 ${last.i} 格`);
+    audio.play('move');         // 盘面退了一步
+    haptic('tap');
   }
   persist();
   render();
@@ -400,6 +449,8 @@ function doUndo() {
 
 function doClear() {
   game.clearAll();
+  audio.play('move');           // 盘面清空了
+  haptic('tap');
   S.hintCells = [];
   S.wrong = [];
   setMsg('棋盘清空');
@@ -417,7 +468,13 @@ function moveSelected(dr, dc) {
 }
 
 function eraseSelected() {
-  if (S.selected == null || !game.erase(S.selected)) return;
+  if (S.selected == null || !game.erase(S.selected)) {
+    audio.play('blocked');       // 这一格本来就是空的
+    haptic('err');
+    return;
+  }
+  audio.play('tap');             // 引擎真擦掉了这一格
+  haptic('tap');
   store.addTotals({ moves: 1 });
   S.totals = store.load().totals;
   setMsg(`擦掉第 ${S.selected} 格`);
@@ -698,4 +755,27 @@ setPen(BLACK);
   window.addEventListener('webkitfullscreenchange', sync);
   window.addEventListener('MSFullscreenChange', sync);
   sync();
+})();
+
+// ---- 音效开关（#btn-sound）----
+//
+// 静音走 `audio.setMuted(true)`，那是 `ctx.suspend()`：整个 AudioContext 挂起。
+// **不许**改成像"把 master.gain 拧到 0"那样 —— 只拧 gain 是假静音：节点照建、时钟照跑，
+// 取消静音之后还有一截尾巴在响。真正的静音必须是挂起整个上下文。
+//
+// 按钮找不到就不装（和全屏那一条同一条纪律）：留一串没人按的代码等于没做这个功能。
+(function bindSound() {
+  const btn = document.getElementById('btn-sound');
+  if (!btn) return;
+  function paint() {
+    const on = !audio.muted;
+    btn.setAttribute('aria-pressed', String(on));
+    btn.textContent = on ? '音效：开' : '音效：关';
+    btn.title = on ? '点击关闭音效' : '点击开启音效';
+  }
+  btn.addEventListener('click', () => {
+    audio.setMuted(!audio.muted);
+    paint();
+  });
+  paint();
 })();
