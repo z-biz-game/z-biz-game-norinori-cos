@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0a0a12">
+
 <meta charset="utf-8">
 <!-- 不写 <base>，也没有一个以 / 开头的资源路径：Pages 把站点发在 /<repo>/ 前缀下，
      硬编 "/" 会在这一形把 css 与引擎全部 404 掉（本组织的浏览器闸因此跑两趟 URL 形态）。 -->
@@ -19,6 +22,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="css/studio.css" />
 </head>
 <body>
 <header>
@@ -85,5 +89,7 @@
     硬骨档一次 attempt 的实测尾巴是 0.6～2.3 秒，主线程同步等就是把界面钉死。</p>
 </footer>
   <script src="js/sw-register.js"></script>
+<script src="js/haptics.js"></script>
+  <div class="studio-atmosphere" aria-hidden="true"></div>
 </body>
 </html>

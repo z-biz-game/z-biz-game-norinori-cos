@@ -20,8 +20,49 @@ import { validatePartition, checkSolution } from './engine/grid.js';
 import { TIERS, tierByKey, generate } from './engine/generate.js';
 import { derive } from './engine/rng.js';
 import { countByRegion } from './engine/counter.js';
-import { blip, isMuted, setMuted, stats as audioStats } from './audio.js';
+// 听觉这一路反馈：音频单例自己管手势解锁与真静音，这里只管把音接到引擎的判定分支上。
+import { audio } from './audio.js';
 import * as store from './store.js';
+
+/**
+ * 触觉：仓里已经有一份垫片（js/haptics.js，用 <script> 引入，暴露 window.haptic）。
+ * 这里**不另造一套**：只在引擎判定的分支上叫它一声，让"被拒"与"通关"有各自的档。
+ * ⚠️ 触觉是补路，不是主路：iOS Safari 没有 navigator.vibrate，不能拿它顶替听觉。
+ */
+function haptic(kind) {
+  try {
+    if (typeof window !== 'undefined' && typeof window.haptic === 'function') window.haptic(kind);
+  } catch (_) {
+    /* 没有这一路就算了：它本来就是补路 */
+  }
+}
+
+// 旧的三种墨滴音名映射到远端 VOICES，触觉跟着同一件事一起发：
+//   black/white → correct（引擎真落了这一笔）／hint → move（只说哪一格）／
+//   erase → tap（撤一步）／deny → wrong（引擎不收）／win → win（通关只响这一声）。
+function blip(kind) {
+  switch (kind) {
+    case 'black':
+    case 'white':
+    case 'ok':
+      haptic('correct');
+      return audio.play('correct');
+    case 'hint':
+      haptic('tap');
+      return audio.play('move');
+    case 'erase':
+      haptic('tap');
+      return audio.play('tap');
+    case 'deny':
+      haptic('err');
+      return audio.play('wrong');
+    case 'win':
+      haptic('win');
+      return audio.play('win');
+    default:
+      return audio.play(kind);
+  }
+}
 
 const DEFAULT_SEED = 20260929; // 不是按日期算的：换一局走 derive(seed,'next')，链子决定论、能复现
 const DEFAULT_TIER = 'easy';
@@ -317,13 +358,13 @@ function paint() {
 // 手感与开关的读数，全是标量：外部的帧率对拍工具（不能 import 本仓 ESM 的那类）
 // 靠它在三种帧率下比同一份状态。名字里带 phase 的脉冲是仿真相位，不是墙钟。
 function stateReadout() {
-  const a = audioStats();
   return {
     phase: S.generating ? 'generating' : S.paused ? 'paused' : S.solved ? 'solved' : 'playing',
     paused: S.paused,
-    muted: isMuted(),
-    audioNodes: a.nodes,
-    audioCtx: a.ctxState,
+    muted: audio.muted,
+    // 旧读数里的 nodes/ctxState 在远端单例里没有对应物：能给的是闸的两面——解锁没有、静音没有。
+    audioUnlocked: audio.unlocked,
+    audioState: audio.unlocked ? 'running' : 'idle',
     fullscreen: !!document.fullscreenElement,
     reducedMotion: feel.reducedMotion,
     simTime: feel.simTime,
@@ -340,8 +381,8 @@ function stateReadout() {
 function syncHud() {
   dom.pause.setAttribute('aria-pressed', String(S.paused));
   dom.pause.classList.toggle('on', S.paused);
-  dom.mute.setAttribute('aria-pressed', String(isMuted()));
-  dom.mute.classList.toggle('on', isMuted());
+  dom.mute.setAttribute('aria-pressed', String(audio.muted));
+  dom.mute.classList.toggle('on', audio.muted);
   dom.fullscreen.setAttribute('aria-pressed', String(!!document.fullscreenElement));
   dom.clock.classList.toggle('paused', S.paused);
 }
@@ -456,7 +497,7 @@ function doHint() {
     S.totals = store.load().totals;
     setMsg(`${f.rule}：${RULES[f.rule]}（第 ${f.cell} 格${f.value === BLACK ? '涂黑' : '点白'}）`);
     ripple(f.cell, f.value === BLACK ? 0 : 1);
-    blip('white');
+    blip('hint');
     persist();
   }
   render();
@@ -482,9 +523,11 @@ function doCheck() {
   } else if (!st.filled) {
     S.wrong = [];
     setMsg(`还没落满：未定 ${st.counts.unknown} 格，落下的那些都合法`);
+    blip('deny');
   } else {
     S.wrong = [];
     setMsg('两条规则都过了');
+    blip('ok');
   }
   render();
 }
@@ -494,6 +537,7 @@ function doUndo() {
   const last = game.undo();
   if (!last) {
     setMsg('没有可撤的落子');
+    blip('deny');
   } else {
     S.selected = last.i;
     S.hintCells = [];
@@ -534,7 +578,7 @@ function moveSelected(dr, dc) {
 function eraseSelected() {
   if (S.selected == null) return;
   if (whilePaused()) return;
-  if (!game.erase(S.selected)) return;
+  if (!game.erase(S.selected)) { blip('deny'); return; }
   ripple(S.selected, 2);
   blip('erase');
   store.addTotals({ moves: 1 });
@@ -549,7 +593,8 @@ function eraseSelected() {
 // **仿真**（feel.pause() 之后一个步都不走，恢复也不补跑）。只灰掉按钮不算暂停。
 
 function applyMute(on) {
-  const next = setMuted(on);
+  audio.setMuted(on);
+  const next = audio.muted;
   setMsg(next ? '已静音：上下文挂起，且不再新建任何音节点' : '声音恢复');
   syncHud();
   render();
@@ -557,7 +602,7 @@ function applyMute(on) {
 }
 
 function toggleMuteNow() {
-  return applyMute(!isMuted());
+  return applyMute(!audio.muted);
 }
 
 // requestFullscreen/exitFullscreen 都返回 Promise：没有用户手势、或被 iframe 策略挡住时会 reject。

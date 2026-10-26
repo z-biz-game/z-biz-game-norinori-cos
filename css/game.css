@@ -201,11 +201,11 @@ a[href],
  * 判据：这段渐变只改边框色与字色，两者的**终值**（:hover 时的 --accent 边框、--ink 字色）
  * 一概不动 —— 悬停反馈还在，只是"渐过去"变成"立刻变"。换句话说：动效去掉，信息一条不少。
  *
- * 注：上面那条声明里的 var(--motion-ms) 在本仓 :root 里并没有定义（:root 只有 safe-area
- * 四个变量与 --touch-min），按 CSS 规范整条 transition 声明是 invalid 的、浏览器会丢掉。
- * 也就是说这个渐变在今天的 norinori 上其实压根没跑起来。变量缺失是另一笔账，不在本单
- * 范围，这里只如实记一句；本段的规则写成 transition: none 这样的关键字，不依赖那个变量，
- * 无论将来补不补都成立。 */
+ * 注：上面那条声明里的 var(--motion-ms) 确实不在本仓 :root 里（:root 只有 safe-area
+ * 四个变量与 --touch-min），但它由 js/theme.js 的 Motion.ms（140ms）在 applyThemeVars()
+ * 里写进 document.documentElement.style —— 自定义属性定义在哪都算数，不必在 :root，
+ * 所以那条 transition 是活的：边框色与字色各 140ms 渐过去。本段规则写成 transition: none
+ * 这样的关键字，不依赖那个变量，无论将来变量怎么改都成立。 */
 @media (prefers-reduced-motion: reduce) {
   /* 悬停不再渐变：边框色与字色立刻切到终值，:hover 规则本身保留 */
   button,
